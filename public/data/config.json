@@ -1,0 +1,25 @@
+{
+  "standardizedColumns": [
+    "ACCOUNTNUMBER",
+    "NAME",
+    "ADDRESS1",
+    "ADDRESS2",
+    "ADDRESS3",
+    "CITY",
+    "REGION",
+    "POSTALCODE",
+    "COUNTRY",
+    "PHONENO",
+    "TERMS",
+    "TOTALARC",
+    "FIRSTSALE",
+    "CRDTLIMITC",
+    "CURRENCY",
+    "DEBTCURRENT",
+    "DEBT30DAY",
+    "DEBT60DAY",
+    "DEBT90DAY",
+    "DEBT91PLUS",
+    "VAT"
+  ]
+}
