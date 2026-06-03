@@ -3,7 +3,6 @@ import { AGING_FIELDS } from "./matchers";
 
 export interface CodeGenOutput {
   cs: string;
-  ini: string;
 }
 
 function toPascal(s: string): string {
@@ -150,40 +149,19 @@ ${agingDecl}
 
         foreach (DataRow dr in dt.Rows)
         {
-${agingReads}
-${agingAssigns}
-
 ${strReads}
 
+${agingReads}
+
 ${strAssigns}
+
+${agingAssigns}
         }
         dt.AcceptChanges();
     }
 }`;
 
-  const ini = `[FixedRawData.csv]
-ColNameHeader=True
-Format=Delimited(,)
-MaxScanRows=0
-CharacterSet=65001
-${(() => {
-  let c = 0;
-  const t = mapped.filter((m) => m.mappedTo === "DEBT91PLUS").length;
-  return mapped
-    .map((m, di) => {
-      let n = m.mappedTo;
-      if (m.mappedTo === "DEBT91PLUS") {
-        ++c;
-        n = t === 1 ? "DEBT91PLUSC" : `DEBT91PLUSC${c}`;
-      } else if ((AGING_FIELDS as readonly string[]).includes(m.mappedTo)) {
-        n = `${m.mappedTo}C`;
-      }
-      return `Col${di + 1}=${n} char`;
-    })
-    .join("\n");
-})()}`;
-
-  return { cs, ini };
+  return { cs };
 }
 
 export { toPascal };

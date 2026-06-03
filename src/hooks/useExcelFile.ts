@@ -22,7 +22,7 @@ function cellToString(value: ExcelJS.CellValue): string {
     // Date
     if (value instanceof Date) return value.toISOString().split("T")[0];
   }
-  return String(value);
+  return String(value).trim();
 }
 
 function parseCSV(text: string): string[][] {

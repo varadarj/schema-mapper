@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { ArrowLeft, Code2, AlertCircle } from "lucide-react";
+import { ArrowLeft, Code2, AlertCircle, Copy, Check } from "lucide-react";
 
 import { CodeBlock } from "../components/CodeBlock";
 import { ClassNameModal } from "../components/ClassNameModal";
@@ -13,6 +13,17 @@ import { REQUIRED_FIELDS } from "../lib/mapping";
 export function ProviderPage() {
   const navigate = useNavigate();
   const [showClassModal, setShowClassModal] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  function handleCopy() {
+    const text = "Field Mapping:\n" + mappings
+      .map((m) => `${m.excelHeader.trim()} = ${m.mappedTo}`)
+      .join("\n");
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
 
   const { mappings, codeOutput, generateCode, clearCode, defaultClassName } =
     useMappingStore();
@@ -79,23 +90,37 @@ export function ProviderPage() {
 
           {/* Mapping summary */}
           <div>
-            <h2 className="text-sm font-medium mb-2">Approved mapping summary</h2>
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-sm font-medium">Field Mapping:</h2>
+              <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 gap-1.5 text-xs"
+          onClick={handleCopy}
+        >
+          {copied ? (
+            <><Check className="h-3 w-3" /> Copied</>
+          ) : (
+            <><Copy className="h-3 w-3" /> Copy</>
+          )}
+        </Button>
+            </div>
             <Card>
               <CardContent className="p-0">
                 <div className="divide-y">
                   {mappings.map((m, i) => (
                     <div
                       key={i}
-                      className="flex items-center gap-3 px-4 py-2 font-mono text-xs"
+                      className="flex items-center gap-2 px-4 py-2 font-mono text-xs"
                     >
                       <span className="text-muted-foreground w-6 shrink-0">
                         {m.excelIndex}
                       </span>
-                      <span className="flex-1 truncate">{m.excelHeader}</span>
-                      <span className="text-muted-foreground mx-2">=</span>
+                      <span className="truncate">{m.excelHeader}</span>
+                      <span className="text-muted-foreground">=</span>
                       <span
                         className={
-                          m.mappedTo === "UNMAPPED"
+                          m.mappedTo === "IGNORE"
                             ? "text-muted-foreground"
                             : "font-semibold text-foreground"
                         }
@@ -127,21 +152,20 @@ export function ProviderPage() {
           {codeOutput && (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <h2 className="text-sm font-medium">Generated files</h2>
+                <h2 className="text-sm font-medium">Provider Class:</h2>
                 <Button
-                  variant="ghost"
+                  variant="outline"
                   size="sm"
                   onClick={() => {
                     clearCode();
                     setShowClassModal(true);
                   }}
-                  className="text-xs gap-1.5"
+                  className="text-xs gap-1.5 bg-green-300 rounded-md"
                 >
                   Regenerate with different class name
                 </Button>
               </div>
               <CodeBlock title={`${codeOutput.className}.cs`} content={codeOutput.cs} />
-              <CodeBlock title="schema.ini" content={codeOutput.ini} />
             </div>
           )}
         </>

@@ -165,7 +165,7 @@ export const useMappingStore = create<MappingStore>((set, get) => ({
   generateCode: (className) => {
     const { mappings } = get();
     const output = generateCSharp(mappings, className);
-    set({ codeOutput: { ...output, className } });
+    set({ codeOutput: { cs: output.cs, className } });
   },
 
   clearCode: () => set({ codeOutput: null }),
