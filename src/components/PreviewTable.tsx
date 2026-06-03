@@ -9,7 +9,7 @@ interface SideProps {
 function PreviewSide({ title, headers, rows }: SideProps) {
   return (
     <div className="flex-1 min-w-0 border rounded-lg overflow-hidden">
-      <div className="px-3 py-2 bg-muted border-b text-xs font-medium text-muted-foreground">
+      <div className="px-3 py-2 bg-orange-300 border-b text-xs font-bold text-muted-foreground">
         {title}
       </div>
       <div className="overflow-auto max-h-56">
@@ -56,14 +56,14 @@ export function PreviewTable({ preview }: PreviewTableProps) {
   if (!rows.length) return null;
 
   return (
-    <div className="flex gap-3 overflow-hidden">
+    <div className="flex flex-col gap-7 overflow-hidden">
       <PreviewSide
-        title="Original (Excel)"
+        title={`Original (Excel)`}
         headers={origHeaders}
         rows={rows.map((r) => r.orig)}
       />
       <PreviewSide
-        title="Remapped (FixedRawData)"
+        title={`Remapped (FixedRawData)`}
         headers={dspHeaders}
         rows={rows.map((r) => r.remap)}
       />

@@ -20,7 +20,7 @@ export interface ExcelData {
   totalRows: number;
 }
 
-export const REQUIRED_FIELDS = ["ACCOUNTNUMBER", "NAME", "ADDRESS1"] as const;
+export const REQUIRED_FIELDS = ["NAME", "ADDRESS1"] as const;
 
 export function confidenceFromScore(field: string, score: number): Confidence {
   if (field === "IGNORE") return "NONE";
@@ -36,6 +36,11 @@ export function buildMappings(
 ): ColumnMapping[] {
   let mappings: ColumnMapping[] = excelData.headers.map((header, i) => {
     const { field, score, method } = bestMatch(header, candidates);
+    // If the matched field isn't in the candidate list, fall back to IGNORE
+    const resolvedField =
+      field !== "IGNORE" && candidates.length > 0 && !candidates.includes(field)
+        ? "IGNORE"
+        : field;
     const sampleVals = excelData.sampleRows
       .slice(0, 5)
       .map((r) => String(r[i] ?? ""))
@@ -44,11 +49,11 @@ export function buildMappings(
       excelIndex: i,
       excelHeader: header,
       sampleVals,
-      mappedTo: field,
-      score,
-      confidence: confidenceFromScore(field, score),
+      mappedTo: resolvedField,
+      score: resolvedField === "IGNORE" && field !== "IGNORE" ? 0 : score,
+      confidence: confidenceFromScore(resolvedField, resolvedField === "IGNORE" && field !== "IGNORE" ? 0 : score),
       method,
-      required: (REQUIRED_FIELDS as readonly string[]).includes(field),
+      required: (REQUIRED_FIELDS as readonly string[]).includes(resolvedField),
     };
   });
 
@@ -80,7 +85,7 @@ export function enforceArUniqueness(mappings: ColumnMapping[]): ColumnMapping[] 
 // Compares all address field pairs and swaps DSP assignments if needed
 export function fixAddressOrder(mappings: ColumnMapping[]): ColumnMapping[] {
   const result = mappings.map((m) => ({ ...m }));
-  const addrFields = ["ADDRESS1", "ADDRESS2", "CITY", "STATE"];
+  const addrFields = ["ADDRESS1", "ADDRESS2", "CITY", "REGION"];
 
   for (let i = 0; i < addrFields.length - 1; i++) {
     for (let j = i + 1; j < addrFields.length; j++) {
@@ -180,7 +185,7 @@ export interface PreviewData {
 export function buildPreviewRows(
   excelData: ExcelData,
   mappings: ColumnMapping[],
-  count = 12
+  count = 50
 ): PreviewData {
   const mapped = mappings.filter((m) => m.mappedTo !== "IGNORE");
   const pool = excelData.sampleRows.filter((r) => r.some((c) => c !== ""));

@@ -34,7 +34,7 @@ export function ClassNameModal({
 
   return (
     <Dialog open onOpenChange={(open) => !open && onCancel()}>
-      <DialogContent className="max-w-sm">
+      <DialogContent className="max-w-sm bg-white">
         <DialogHeader>
           <DialogTitle>Provider class name</DialogTitle>
           <DialogDescription>

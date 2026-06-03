@@ -62,7 +62,7 @@ const ADDR_RX: Record<string, RegExp[]> = {
   ADDRESS1: [/^address$/i, /address\s*(line\s*)?1$/i, /addr1/i, /street/i],
   ADDRESS2: [/address\s*(line\s*)?2/i, /addr2/i, /suite/i, /apt\b/i, /unit\b/i],
   CITY: [/^city$/i, /\bcity\b/i, /\btown\b/i],
-  STATE: [/\bstate\b/i, /\bprovince\b/i, /\bregion\b/i],
+  REGION: [/\bstate\b/i, /\bprovince\b/i, /\bregion\b/i],
   POSTALCODE: [/postal/i, /zip/i, /post\s*code/i, /postcode/i],
   COUNTRY: [/\bcountry\b/i, /\bnation\b/i],
 };
@@ -71,7 +71,7 @@ const ADDR_LINE_MAP: Record<number, string> = {
   1: "ADDRESS1",
   2: "ADDRESS2",
   3: "CITY",
-  4: "STATE",
+  4: "REGION",
 };
 
 export function matchAddress(header: string): MatchResult | null {
