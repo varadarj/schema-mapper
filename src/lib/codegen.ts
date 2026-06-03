@@ -32,11 +32,18 @@ export function generateCSharp(
   if (!mapped.length) return { cs: "", ini: "" };
 
   // ── FixRawData mappings ──
+  // DEBT91PLUS: single -> "DEBT91PLUS", multiple -> "DEBT91PLUS1", "DEBT91PLUS2", ...
+  const debt91MapTotal = mapped.filter((m) => m.mappedTo === "DEBT91PLUS").length;
+  let debt91MapCount = 0;
   const mapLines = mapped
-    .map(
-      (m, di) =>
-        `        map.Add(new FileField("${m.excelHeader}", ${m.excelIndex}), new DspField("${m.mappedTo}", ${di}));`
-    )
+    .map((m, di) => {
+      let dspName = m.mappedTo;
+      if (m.mappedTo === "DEBT91PLUS") {
+        ++debt91MapCount;
+        dspName = debt91MapTotal === 1 ? "DEBT91PLUS" : `DEBT91PLUS${debt91MapCount}`;
+      }
+      return `        map.Add(new FileField("${m.excelHeader}", ${m.excelIndex}), new DspField("${dspName}", ${di}));`;
+    })
     .join("\n");
 
   // ── ODBC schema ──
@@ -62,10 +69,7 @@ export function generateCSharp(
     .map((m) => `        string ${m.mappedTo.toLowerCase()} = string.Empty;`)
     .join("\n");
   const strReads = strMapped
-    .map(
-      (m) =>
-        `            ${m.mappedTo.toLowerCase()} = dr["${m.mappedTo}"].ToString().ToUpper().Trim();`
-    )
+    .map((m) => `            ${m.mappedTo.toLowerCase()} = dr["${m.mappedTo}"].ToString().ToUpper().Trim();`)
     .join("\n");
   const strAssigns = strMapped
     .map((m) => `            dr["${m.mappedTo}"] = ${m.mappedTo.toLowerCase()};`)
@@ -77,7 +81,7 @@ export function generateCSharp(
   );
   const hasAging = agingMapped.length > 0;
   const agingDecl = hasAging
-    ? "\n        decimal debtCurr=0M, debt30D=0M, debt60D=0M, debt90D=0M, debt91P=0M;"
+    ? "        decimal debtCurr=0M, debt30D=0M, debt60D=0M, debt90D=0M, debt91P=0M;"
     : "";
 
   const debt91AgingTotal = agingMapped.filter((m) => m.mappedTo === "DEBT91PLUS").length;
@@ -88,23 +92,28 @@ export function generateCSharp(
       if (!v) return "";
       if (m.mappedTo === "DEBT91PLUS") {
         ++debt91Count;
-        // single DEBT91PLUS -> DEBT91PLUSC with =, multiple -> DEBT91PLUSCn with +=
         const colKey = debt91AgingTotal === 1 ? "DEBT91PLUSC" : `DEBT91PLUSC${debt91Count}`;
-        const op = debt91AgingTotal === 1 ? "=" : "+=";
-        return `            ${v} ${op} (dr["${colKey}"] == DBNull.Value) ? 0M : Convert.ToDecimal(_ut.CleanNumeric(dr["${colKey}"]));`;      
+        // first DEBT91PLUS uses =, subsequent use +=
+        const op = debt91Count === 1 ? "=" : "+=";
+        return `            ${v} ${op} (dr["${colKey}"] == DBNull.Value) ? 0M : Convert.ToDecimal(_ut.CleanNumeric(dr["${colKey}"]));`;
       }
       const colKey = m.mappedTo + "C";
-    return `            ${v} = (dr["${colKey}"] == DBNull.Value) ? 0M : Convert.ToDecimal(_ut.CleanNumeric(dr["${colKey}"]));`;    })
+      return `            ${v} = (dr["${colKey}"] == DBNull.Value) ? 0M : Convert.ToDecimal(_ut.CleanNumeric(dr["${colKey}"]));`;
+    })
     .filter(Boolean)
     .join("\n");
 
   const agingAssigns = hasAging
-    ? `\n            dr["DEBTCURRENT"] = debtCurr;\n            dr["DEBT30DAY"] = debt30D;\n            dr["DEBT60DAY"] = debt60D;\n            dr["DEBT90DAY"] = debt90D;\n            dr["DEBT91PLUS"] = debt91P;`
+    ? `            dr["DEBTCURRENT"] = debtCurr;\n            dr["DEBT30DAY"] = debt30D;\n            dr["DEBT60DAY"] = debt60D;\n            dr["DEBT90DAY"] = debt90D;\n            dr["DEBT91PLUS"] = debt91P;`
     : "";
 
-  // Use ACCOUNTNUMBER as the row filter if mapped, otherwise fall back to NAME
+  // ── FixRawData .Where() — filter out empty rows and header bleed-through ──
   const hasAccountNumber = mapped.some((m) => m.mappedTo === "ACCOUNTNUMBER");
   const rowFilterField = hasAccountNumber ? "ACCOUNTNUMBER" : "NAME";
+  const rowFilterHeader = mapped.find((m) => m.mappedTo === rowFilterField)?.excelHeader ?? "";
+  const whereClause = rowFilterHeader
+    ? `R["${rowFilterField}"].ToString().Trim().Length > 0\n                           && !R["${rowFilterField}"].ToString().Equals("${rowFilterHeader}", StringComparison.OrdinalIgnoreCase)`
+    : `R["${rowFilterField}"].ToString().Trim().Length > 0`;
 
   const cs = `public class ${className} : StandardProcessor
 {
@@ -115,7 +124,7 @@ ${mapLines}
 
         DataTable dt = this.GetMappedDataTable(map, filePath, fileName)
                            .AsEnumerable()
-                           .Where(R => R["${rowFilterField}"].ToString().Trim().Length > 0)
+                           .Where(R => ${whereClause})
                            .CopyToDataTable();
 
         _ut.ExportToTextFile(dt, filePath + (fileName = "FixedRawData.csv"), ",", true, true);
@@ -157,7 +166,22 @@ ColNameHeader=True
 Format=Delimited(,)
 MaxScanRows=0
 CharacterSet=65001
-${(() => { let c = 0; const t = mapped.filter(m => m.mappedTo === "DEBT91PLUS").length; return mapped.map((m, di) => { let n = m.mappedTo; if (m.mappedTo === "DEBT91PLUS") { ++c; n = t === 1 ? "DEBT91PLUSC" : `DEBT91PLUSC${c}`; } else if ((AGING_FIELDS as readonly string[]).includes(m.mappedTo)) n = `${m.mappedTo}C`; return `Col${di + 1}=${n} char`; }).join("\n"); })()}`;
+${(() => {
+  let c = 0;
+  const t = mapped.filter((m) => m.mappedTo === "DEBT91PLUS").length;
+  return mapped
+    .map((m, di) => {
+      let n = m.mappedTo;
+      if (m.mappedTo === "DEBT91PLUS") {
+        ++c;
+        n = t === 1 ? "DEBT91PLUSC" : `DEBT91PLUSC${c}`;
+      } else if ((AGING_FIELDS as readonly string[]).includes(m.mappedTo)) {
+        n = `${m.mappedTo}C`;
+      }
+      return `Col${di + 1}=${n} char`;
+    })
+    .join("\n");
+})()}`;
 
   return { cs, ini };
 }
