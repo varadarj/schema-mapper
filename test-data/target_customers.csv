@@ -1,0 +1,15 @@
+record_status,ECID,legal_name,municipality,nation,balance_due,internal_ref
+ACTIVE,E1001,Acme Industries,Chicago,USA,15230.50,REF-7741
+ACTIVE,E1002,Brightpath Logistics,Toronto,Canada,8920.00,REF-3920
+CLOSED,E1003,Cobalt Systems,London,UK,45100.75,REF-1185
+ACTIVE,E1004,Delphi Foods,Munich,Germany,3320.10,REF-6622
+ACTIVE,E1005,Evergreen Textiles,Mumbai,India,67800.00,REF-4503
+CLOSED,E1006,Falcon Metals,Sydney,Australia,12050.25,REF-8890
+ACTIVE,E1007,Granite Holdings,Chicago,USA,9870.40,REF-2271
+ACTIVE,E1008,Harbor Freight Co,Toronto,Canada,23410.90,REF-9914
+CLOSED,E1009,Ionic Pharma,London,UK,5600.00,REF-5560
+ACTIVE,E1010,Juniper Energy,Munich,Germany,88200.15,REF-3308
+ACTIVE,E1011,Keystone Retail,Mumbai,India,14300.00,REF-7019
+ACTIVE,E1012,Lumen Analytics,Sydney,Australia,31900.60,REF-6447
+ACTIVE,E1013,Meridian Shipping,Osaka,Japan,20100.00,REF-1212
+CLOSED,E1014,Northwind Traders,Paris,France,7650.30,REF-3434

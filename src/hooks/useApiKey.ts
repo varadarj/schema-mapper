@@ -1,12 +1,12 @@
 import { useState } from "react";
-import { useMappingStore } from "../store/useMappingStore";
+import { useApiKeyStore } from "../store/useApiKeyStore";
 
 export function useApiKey() {
   const [inputValue, setInputValue] = useState("");
   const [testing, setTesting] = useState(false);
   const [error, setError] = useState("");
 
-  const { apiTested, apiKey, testApiConnection } = useMappingStore();
+  const { apiTested, apiKey, testApiConnection } = useApiKeyStore();
 
   async function handleTest() {
     if (!inputValue.trim()) return;

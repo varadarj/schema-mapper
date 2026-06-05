@@ -1,7 +1,7 @@
 import { bestMatch, AGING_FIELDS, AR_UNIQUE } from "./matchers";
 
 export type Confidence = "HIGH" | "MEDIUM" | "LOW" | "NONE";
-export type MatchMethod = "pattern" | "address" | "heuristic" | "fuzzy" | "ai";
+export type MatchMethod = "pattern" | "address" | "heuristic" | "fuzzy" | "ai" | "data";
 
 export interface ColumnMapping {
   excelIndex: number;

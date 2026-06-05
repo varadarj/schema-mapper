@@ -28,7 +28,7 @@ export function generateCSharp(
   className: string
 ): CodeGenOutput {
   const mapped = mappings.filter((m) => m.mappedTo !== "IGNORE");
-  if (!mapped.length) return { cs: "", ini: "" };
+  if (!mapped.length) return { cs: "" };
 
   // ── FixRawData mappings ──
   // DEBT91PLUS: single -> "DEBT91PLUS", multiple -> "DEBT91PLUS1", "DEBT91PLUS2", ...

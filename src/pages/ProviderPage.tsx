@@ -55,7 +55,7 @@ export function ProviderPage() {
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => navigate("/")}
+          onClick={() => navigate("/dsp3")}
           className="gap-2 shrink-0"
         >
           <ArrowLeft className="h-4 w-4" />

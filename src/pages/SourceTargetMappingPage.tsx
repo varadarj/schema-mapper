@@ -1,46 +1,57 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { Wand2, RefreshCw, ArrowRight, Brain, ChevronDown, ChevronUp, Loader2 } from "lucide-react";
+import {
+  Wand2,
+  RefreshCw,
+  ArrowRight,
+  ArrowLeft,
+  Brain,
+  ChevronDown,
+  ChevronUp,
+  Loader2,
+} from "lucide-react";
 
 import { DropZone } from "../components/DropZone";
 import { MappingTable } from "../components/MappingTable";
 import { PreviewTable } from "../components/PreviewTable";
 import { ConflictModal } from "../components/ConflictModal";
 import { ApiKeyPanel } from "../components/ApiKeyPanel";
-import { useMappingStore } from "../store/useMappingStore";
+import { useSourceTargetStore } from "../store/useSourceTargetStore";
 import { useApiKeyStore } from "../store/useApiKeyStore";
-import { useExcelFile } from "../hooks/useExcelFile";
-import { useConfigFile } from "../hooks/useConfigFile";
+import { parseFile } from "../lib/fileParse";
 
-export function MappingPage() {
+export function SourceTargetMappingPage() {
   const navigate = useNavigate();
   const [showApiPanel, setShowApiPanel] = useState(false);
 
+  const sourceInputRef = useRef<HTMLInputElement>(null);
+  const targetInputRef = useRef<HTMLInputElement>(null);
+
   const {
-    excelData,
-    fileName,
-    standardizedColumns,
-    configLoaded,
+    sourceData,
+    sourceName,
+    targetData,
+    targetName,
     mappings,
     preview,
     pendingConflict,
     aiLoading,
-    runFuzzyMapping,
-    runAiMapping,
+    setSource,
+    setTarget,
+    runDataMatching,
     handleMappingChange,
     confirmConflict,
     cancelConflict,
+    runAiRefine,
     reset,
-  } = useMappingStore();
+  } = useSourceTargetStore();
   const { apiTested } = useApiKeyStore();
 
-  const excel = useExcelFile();
-  const config = useConfigFile();
-
   const hasMappings = mappings.length > 0;
+  const canRun = !!sourceData && !!targetData;
 
   const stats = {
     high: mappings.filter((m) => m.confidence === "HIGH").length,
@@ -49,54 +60,61 @@ export function MappingPage() {
     none: mappings.filter((m) => m.confidence === "NONE").length,
   };
 
-  const allOptions = ["IGNORE", ...standardizedColumns];
+  const allOptions = ["IGNORE", ...(targetData?.headers ?? [])];
+
+  async function handleUpload(file: File, which: "source" | "target") {
+    const parsed = await parseFile(file);
+    if (!parsed) {
+      alert("File appears empty.");
+      return;
+    }
+    if (which === "source") setSource(parsed.data, parsed.fileName, parsed.allRows);
+    else setTarget(parsed.data, parsed.fileName, parsed.allRows);
+  }
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8 space-y-6">
-      {/*Settings */}
-      <div className="flex gap-2">
-        <Button
-          variant={apiTested ? "secondary" : "outline"}
-          size="sm"
-          className="gap-1.5 shrink-0"
-          onClick={() => setShowApiPanel((v) => !v)}
-        >
-          <Brain className="h-4 w-4" />
-          {apiTested ? "AI ready" : "AI settings"}
-          {showApiPanel ? (
-            <ChevronUp className="h-3 w-3" />
-          ) : (
-            <ChevronDown className="h-3 w-3" />
-          )}
+      {/* Top bar */}
+      <div className="flex items-center justify-between">
+        <Button variant="ghost" size="sm" onClick={() => navigate("/")} className="gap-2">
+          <ArrowLeft className="h-4 w-4" />
+          Home
         </Button>
-
-        {apiTested && hasMappings && (
+        <div className="flex gap-2">
           <Button
-            variant="outline"
+            variant={apiTested ? "secondary" : "outline"}
             size="sm"
-            disabled={aiLoading}
-            onClick={runAiMapping}
             className="gap-1.5 shrink-0"
+            onClick={() => setShowApiPanel((v) => !v)}
           >
-            {aiLoading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Brain className="h-4 w-4" />
-            )}
-            {aiLoading ? "Mapping…" : "Remap with AI"}
+            <Brain className="h-4 w-4" />
+            {apiTested ? "AI ready" : "AI settings"}
+            {showApiPanel ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
           </Button>
-        )}
+
+          {apiTested && hasMappings && (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={aiLoading}
+              onClick={runAiRefine}
+              className="gap-1.5 shrink-0"
+            >
+              {aiLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Brain className="h-4 w-4" />}
+              {aiLoading ? "Refining…" : "Refine with AI"}
+            </Button>
+          )}
+        </div>
       </div>
-      
-      {/* API panel */}
+
       {showApiPanel && <ApiKeyPanel />}
 
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Schema mapper</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Source ↔ Target mapping</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Upload an Excel file and a column config to predict schema mappings
-          using fuzzy matching, AR aging patterns, and address heuristics.
+          Upload two files containing the same data. Columns are matched by the
+          values inside them, so renamed fields are detected automatically.
         </p>
       </div>
 
@@ -105,31 +123,31 @@ export function MappingPage() {
         <Card>
           <CardHeader className="pb-3 pt-4 px-4">
             <CardTitle className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
-              Step 1 — Excel data file
+              Source file
             </CardTitle>
           </CardHeader>
           <CardContent className="px-4 pb-4">
             <DropZone
-              loaded={!!excelData}
-              label={
-                excelData
-                  ? fileName
-                  : "Click to upload .xlsx / .xls / .csv "
-              }
+              loaded={!!sourceData}
+              label={sourceData ? sourceName : "Click to upload .xlsx / .xls / .csv"}
               sublabel={
-                excelData
-                  ? `${excelData.headers.length} columns · ${excelData.totalRows} rows`
+                sourceData
+                  ? `${sourceData.headers.length} columns · ${sourceData.totalRows} rows`
                   : undefined
               }
-              icon="📊"
-              onClick={excel.openPicker}
+              icon="📥"
+              onClick={() => sourceInputRef.current?.click()}
             />
             <input
-              ref={excel.inputRef}
+              ref={sourceInputRef}
               type="file"
               accept=".xlsx,.xls,.csv"
               className="hidden"
-              onChange={excel.onChange}
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) handleUpload(f, "source");
+                e.target.value = "";
+              }}
             />
           </CardContent>
         </Card>
@@ -137,27 +155,31 @@ export function MappingPage() {
         <Card>
           <CardHeader className="pb-3 pt-4 px-4">
             <CardTitle className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
-              Step 2 — Column config (JSON)
+              Target file
             </CardTitle>
           </CardHeader>
           <CardContent className="px-4 pb-4">
             <DropZone
-              loaded={configLoaded}
-              label={configLoaded ? "Config loaded" : "Click to upload config.json"}
+              loaded={!!targetData}
+              label={targetData ? targetName : "Click to upload .xlsx / .xls / .csv"}
               sublabel={
-                configLoaded
-                  ? `${standardizedColumns.length} standardized columns`
+                targetData
+                  ? `${targetData.headers.length} columns · ${targetData.totalRows} rows`
                   : undefined
               }
-              icon="⚙️"
-              onClick={config.openPicker}
+              icon="🎯"
+              onClick={() => targetInputRef.current?.click()}
             />
             <input
-              ref={config.inputRef}
+              ref={targetInputRef}
               type="file"
-              accept=".json"
+              accept=".xlsx,.xls,.csv"
               className="hidden"
-              onChange={config.onChange}
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) handleUpload(f, "target");
+                e.target.value = "";
+              }}
             />
           </CardContent>
         </Card>
@@ -168,19 +190,18 @@ export function MappingPage() {
         <Button
           variant="outline"
           size="lg"
-          // disabled={!canRun}
-          onClick={runFuzzyMapping}
+          disabled={!canRun}
+          onClick={runDataMatching}
           className="flex-1 gap-2 bg-gray-200"
         >
           <Wand2 className="h-4 w-4" />
-          Predict schema mapping
+          Generate field mapping
         </Button>
       </div>
 
-      {/* Mapping results */}
+      {/* Results */}
       {hasMappings && (
         <>
-          {/* Stats */}
           <div className="grid grid-cols-4 gap-3">
             {[
               { num: stats.high, label: "High confidence" },
@@ -197,7 +218,7 @@ export function MappingPage() {
 
           <div>
             <h2 className="text-sm font-medium mb-2">
-              Predicted mapping — review and adjust
+              Predicted source → target mapping — review and adjust
             </h2>
             <MappingTable
               mappings={mappings}
@@ -206,25 +227,27 @@ export function MappingPage() {
             />
           </div>
 
-          {/* Data preview */}
           {preview && preview.rows.length > 0 && (
             <div>
               <h2 className="text-sm font-medium mb-2">
                 Data preview — {preview.rows.length} random rows
               </h2>
-              <PreviewTable preview={preview} />
+              <PreviewTable
+                preview={preview}
+                origTitle={`Source — ${sourceName}`}
+                dspTitle={`Target columns — ${targetName}`}
+              />
             </div>
           )}
 
           <Separator />
 
-          {/* Footer actions */}
           <div className="flex justify-between items-center">
             <Button variant="ghost" size="sm" onClick={reset} className="gap-2">
               <RefreshCw className="h-4 w-4" />
               Reset
             </Button>
-            <Button onClick={() => navigate("/dsp3/provider")} className="gap-2">
+            <Button onClick={() => navigate("/source-target/export")} className="gap-2">
               Approve mapping
               <ArrowRight className="h-4 w-4" />
             </Button>
@@ -232,7 +255,6 @@ export function MappingPage() {
         </>
       )}
 
-      {/* Conflict modal */}
       {pendingConflict && (
         <ConflictModal
           conflict={pendingConflict}

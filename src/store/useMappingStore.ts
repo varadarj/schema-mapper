@@ -8,7 +8,8 @@ import {
   buildPreviewRows,
   findConflict,
 } from "../lib/mapping";
-import { remapWithAI, testApiKey as testKey } from "../lib/ai";
+import { remapWithAI } from "../lib/ai";
+import { useApiKeyStore } from "./useApiKeyStore";
 import { generateCSharp, toPascal } from "../lib/codegen";
 import type { CodeGenOutput } from "../lib/codegen";
 
@@ -31,8 +32,6 @@ interface MappingStore {
   pendingConflict: PendingConflict | null;
 
   // ai
-  apiKey: string;
-  apiTested: boolean;
   aiLoading: boolean;
 
   // code output
@@ -50,8 +49,6 @@ interface MappingStore {
   refreshPreview: () => void;
 
   // actions — AI
-  setApiKey: (key: string, tested: boolean) => void;
-  testApiConnection: (key: string) => Promise<void>;
   runAiMapping: () => Promise<void>;
 
   // actions — code gen
@@ -71,8 +68,6 @@ export const useMappingStore = create<MappingStore>((set, get) => ({
   mappings: [],
   preview: null,
   pendingConflict: null,
-  apiKey: "",
-  apiTested: false,
   aiLoading: false,
   codeOutput: null,
 
@@ -137,15 +132,9 @@ export const useMappingStore = create<MappingStore>((set, get) => ({
     if (excelData) set({ preview: buildPreviewRows(excelData, mappings) });
   },
 
-  setApiKey: (key, tested) => set({ apiKey: key, apiTested: tested }),
-
-  testApiConnection: async (key) => {
-    await testKey(key);
-    set({ apiKey: key, apiTested: true });
-  },
-
   runAiMapping: async () => {
-    const { excelData, standardizedColumns, apiKey } = get();
+    const { excelData, standardizedColumns } = get();
+    const { apiKey } = useApiKeyStore.getState();
     if (!excelData || !apiKey) return;
     set({ aiLoading: true });
     try {

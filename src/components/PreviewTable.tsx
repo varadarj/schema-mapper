@@ -49,21 +49,27 @@ function PreviewSide({ title, headers, rows }: SideProps) {
 
 interface PreviewTableProps {
   preview: PreviewData;
+  origTitle?: string;
+  dspTitle?: string;
 }
 
-export function PreviewTable({ preview }: PreviewTableProps) {
+export function PreviewTable({
+  preview,
+  origTitle = "Original (Excel)",
+  dspTitle = "Remapped (FixedRawData)",
+}: PreviewTableProps) {
   const { origHeaders, dspHeaders, rows } = preview;
   if (!rows.length) return null;
 
   return (
     <div className="flex flex-col gap-7 overflow-hidden">
       <PreviewSide
-        title={`Original (Excel)`}
+        title={origTitle}
         headers={origHeaders}
         rows={rows.map((r) => r.orig)}
       />
       <PreviewSide
-        title={`Remapped (FixedRawData)`}
+        title={dspTitle}
         headers={dspHeaders}
         rows={rows.map((r) => r.remap)}
       />

@@ -1,49 +1,21 @@
-import { BrowserRouter, Routes, Route, NavLink } from "react-router-dom";
+import { BrowserRouter, Routes, Route, useNavigate } from "react-router-dom";
+import { HomePage } from "./pages/HomePage";
 import { MappingPage } from "./pages/MappingPage";
 import { ProviderPage } from "./pages/ProviderPage";
-import { useMappingStore } from "./store/useMappingStore";
-import { cn } from "@/lib/utils";
+import { SourceTargetMappingPage } from "./pages/SourceTargetMappingPage";
+import { SourceTargetExportPage } from "./pages/SourceTargetExportPage";
 
 function NavBar() {
-  const { mappings } = useMappingStore();
-  const hasMappings = mappings.length > 0;
-
+  const navigate = useNavigate();
   return (
     <header className="border-b bg-background sticky top-0 z-50 bg-white">
       <div className="max-w-5xl mx-auto px-4 h-14 flex items-center justify-between">
-        <div className="flex items-center gap-6">
-          <span className="font-semibold text-sm">Schema Mapper</span>
-          <nav className="flex items-center gap-1">
-            <NavLink
-              to="/"
-              end
-              className={({ isActive }) =>
-                cn(
-                  "text-sm px-3 py-1.5 rounded-md transition-colors",
-                  isActive
-                    ? "bg-muted font-medium text-foreground"
-                    : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
-                )
-              }
-            >
-              1 · Mapping
-            </NavLink>
-            <NavLink
-              to="/provider"
-              className={({ isActive }) =>
-                cn(
-                  "text-sm px-3 py-1.5 rounded-md transition-colors",
-                  !hasMappings && "pointer-events-none opacity-40",
-                  isActive
-                    ? "bg-muted font-medium text-foreground"
-                    : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
-                )
-              }
-            >
-              2 · Provider
-            </NavLink>
-          </nav>
-        </div>
+        <button
+          onClick={() => navigate("/")}
+          className="font-semibold text-sm hover:opacity-70 transition-opacity"
+        >
+          Schema Mapper
+        </button>
       </div>
     </header>
   );
@@ -56,8 +28,11 @@ export default function App() {
         <NavBar />
         <main>
           <Routes>
-            <Route path="/" element={<MappingPage />} />
-            <Route path="/provider" element={<ProviderPage />} />
+            <Route path="/" element={<HomePage />} />
+            <Route path="/dsp3" element={<MappingPage />} />
+            <Route path="/dsp3/provider" element={<ProviderPage />} />
+            <Route path="/source-target" element={<SourceTargetMappingPage />} />
+            <Route path="/source-target/export" element={<SourceTargetExportPage />} />
           </Routes>
         </main>
       </div>

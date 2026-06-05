@@ -22,6 +22,8 @@ const METHOD_TAG: Record<string, string> = {
   address: "[addr]",
   heuristic: "[key]",
   ai: "[ai]",
+  data: "[data]",
+  fuzzy: "[fuzzy]",
 };
 
 interface MappingTableProps {
