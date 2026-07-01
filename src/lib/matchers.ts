@@ -1,4 +1,4 @@
-import { stringSimilarity } from "./fuzzy";
+import { stringSimilarity } from "./fuzzy.ts";
 
 export type MatchResult = {
   field: string;
@@ -24,6 +24,12 @@ export const AR_UNIQUE = new Set<string>([
   "DEBT60DAY",
   "DEBT90DAY",
 ]);
+
+// ── Invoice providers ─────────────────────────────────────────────────────────
+// Invoice (vs aging) providers carry raw invoice rows. These raw columns get a
+// "C" suffix in the ODBC schema and are converted in ProviderScrub
+// (dates via ParseStringAsDate, amount via CleanNumeric).
+export const INVOICE_FIELDS = ["INVDATE", "DUEDATE", "INVAMT"] as const;
 
 const AGING_PATTERNS: RegExp[][] = [
   // DEBTCURRENT — "Due < 1", "current", "< 30", "0-30", "not yet due"

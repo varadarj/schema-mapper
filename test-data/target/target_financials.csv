@@ -1,0 +1,13 @@
+ECID,municipality,nation,balance_due,credit_rating
+E1005,Mumbai,India,67800.00,BB
+E1001,Chicago,USA,15230.50,A
+E1009,London,UK,5600.00,AA
+E1012,Sydney,Australia,31900.60,BB
+E1003,London,UK,45100.75,AA
+E1007,Chicago,USA,9870.40,BBB
+E1011,Mumbai,India,14300.00,A
+E1002,Toronto,Canada,8920.00,BBB
+E1010,Munich,Germany,88200.15,BBB
+E1004,Munich,Germany,3320.10,A
+E1008,Toronto,Canada,23410.90,A
+E1006,Sydney,Australia,12050.25,A

@@ -1,0 +1,7 @@
+﻿Source Column,Target Column,Target File(s),Value Overlap,Entity Agreement,Confidence,Reason
+entity_id,ECID,target_financials.csv,100%,100%,HIGH,join key (12 entities joined)
+company_name,IGNORE,,0%,,NONE,left unmapped — best was balance_due (only 0% per-entity agreement (12 entities) — not the same field)
+city,municipality,target_financials.csv,100%,100%,HIGH,100% per-entity agreement across 12 entities — confirmed
+country,nation,target_financials.csv,100%,100%,HIGH,100% per-entity agreement across 12 entities — confirmed
+outstanding_amount,balance_due,target_financials.csv,100%,100%,HIGH,100% per-entity agreement across 12 entities — confirmed
+,credit_rating,target_financials.csv,,,NO_SOURCE_MATCH,

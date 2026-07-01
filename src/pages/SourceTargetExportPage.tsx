@@ -13,11 +13,14 @@ export function SourceTargetExportPage() {
   const [copied, setCopied] = useState(false);
   const [building, setBuilding] = useState(false);
 
-  const { mappings, sourceName, targetName, sourceRows, targetRows } =
+  const { mappings, sourceName, targetName, sourceRows, targetRows, targetFileNames, targetColFiles } =
     useSourceTargetStore();
 
   const hasMappings = mappings.length > 0;
   const baseName = `${sourceName || "source"}_to_${targetName || "target"}_mapping`;
+  // Include the target file column only when multiple target files were combined.
+  const fileOf =
+    targetFileNames.length > 1 ? (col: string) => targetColFiles.get(col)?.join(", ") : undefined;
 
   function handleCopy() {
     const text =
@@ -32,7 +35,7 @@ export function SourceTargetExportPage() {
   }
 
   function handleCsv() {
-    downloadMappingCsv(mappings, baseName);
+    downloadMappingCsv(mappings, baseName, fileOf);
   }
 
   async function handleWorkbook() {
@@ -45,6 +48,7 @@ export function SourceTargetExportPage() {
         targetName,
         mappings,
         fileName: baseName,
+        fileOf,
       });
     } finally {
       setBuilding(false);

@@ -1,0 +1,6 @@
+﻿Source Column,financials,identity
+entity_id,ECID,ECID
+company_name,,legal_name
+city,municipality,
+country,nation,
+outstanding_amount,balance_due,

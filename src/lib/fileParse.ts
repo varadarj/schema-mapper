@@ -1,5 +1,5 @@
 import ExcelJS from "exceljs";
-import type { ExcelData } from "./mapping";
+import type { ExcelData } from "./mapping.ts";
 
 // ── Cell coercion (shared by all file uploads) ───────────────────────────────
 export function cellToString(value: ExcelJS.CellValue): string {
@@ -53,9 +53,40 @@ export function parseCSV(text: string): string[][] {
     });
 }
 
+// ── Header-row detection ──────────────────────────────────────────────────────
+// Files often carry title / preamble lines above the real column-header row
+// (e.g. "Aging Report", a date, a blank line). Those lines have few non-empty
+// cells and/or repeated values. The real header is the row whose non-empty cells
+// are all distinct strings. We pick the earliest row (within the first several)
+// that maximizes the count of distinct non-empty cells. Returns the index into
+// `rows`; 0 when nothing better is found (clean files are unchanged).
+//
+// Leading columns that carry extraneous info are intentionally NOT trimmed —
+// column positions are preserved so they can be fixed via the indexes in the
+// DSP field mapping, and any stray rows are voided at runtime by the
+// empty-key (ACCOUNTNUMBER/NAME) filter in the generated provider.
+export function findHeaderRow(rows: string[][]): number {
+  const scan = Math.min(rows.length, 25);
+  let bestIdx = 0;
+  let bestScore = 0;
+  for (let i = 0; i < scan; i++) {
+    const cells = rows[i].map((c) => (c ?? "").trim());
+    const nonEmpty = cells.filter((c) => c !== "");
+    if (nonEmpty.length < 2) continue; // skip title / single-value preamble rows
+    const distinct = new Set(nonEmpty).size;
+    // strictly greater → earliest row wins ties (header precedes data rows)
+    if (distinct > bestScore) {
+      bestScore = distinct;
+      bestIdx = i;
+    }
+  }
+  return bestIdx;
+}
+
 // Build the sampled ExcelData used for matching/preview (first 10 + up to 90 random)
 export function buildExcelData(allRows: string[][], totalRows: number): ExcelData {
-  const headers = allRows[0];
+  // Guard against sparse-array holes / nullish cells in the header row.
+  const headers = Array.from(allRows[0] ?? [], (c) => (c == null ? "" : String(c)));
   const dataRows = allRows.slice(1).filter((r) => r.some((c) => c !== ""));
 
   const padded = dataRows.map((r) => {
@@ -110,15 +141,21 @@ export async function parseFile(file: File): Promise<ParsedFile | null> {
     allRows = [];
     worksheet.eachRow({ includeEmpty: false }, (row) => {
       const cells = (row.values as ExcelJS.CellValue[]).slice(1); // index 0 is empty in ExcelJS
-      allRows.push(cells.map(cellToString));
+      // row.values is a SPARSE array when cells are blank; Array.from fills the
+      // holes (Array.prototype.map would skip them, leaving undefined entries).
+      allRows.push(Array.from({ length: cells.length }, (_, i) => cellToString(cells[i])));
     });
   }
 
   if (allRows.length < 2) return null;
 
+  // Drop preamble / extra header lines: start at the detected header row.
+  const headerIdx = findHeaderRow(allRows);
+  const fromHeader = headerIdx > 0 ? allRows.slice(headerIdx) : allRows;
+
   // Normalize row width to the header for the full export rows too.
-  const headers = allRows[0];
-  const normalized = allRows.map((r) => {
+  const headers = fromHeader[0];
+  const normalized = fromHeader.map((r) => {
     const copy = [...r];
     while (copy.length < headers.length) copy.push("");
     return copy;

@@ -26,16 +26,41 @@ function sanitizeSheetName(name: string, fallback: string): string {
   return (cleaned || fallback).slice(0, 31);
 }
 
-// File 1 — a simple two-column mapping CSV (source column, target column),
-// written UTF-8 with BOM + CRLF so Excel opens it cleanly.
-export function downloadMappingCsv(mappings: ColumnMapping[], baseName: string) {
-  const header = ["Source Column", "Target Column"];
-  const lines = [header, ...mappings.map((m) => [
-    m.excelHeader,
-    m.mappedTo === "IGNORE" ? "" : m.mappedTo,
-  ])];
+function altsText(m: ColumnMapping): string {
+  return (m.alternatives ?? [])
+    .map((a) => `${a.target} (${(a.score * 100).toFixed(0)}%, sem ${(a.name * 100).toFixed(0)}%)`)
+    .join("; ");
+}
 
-  const body = lines.map((row) => row.map(csvCell).join(",")).join("\r\n");
+// Mapping rows shared by the CSV and the workbook sheet. `fileOf` (optional)
+// adds a "Target File(s)" column showing which target file each column came from.
+function mappingRows(
+  mappings: ColumnMapping[],
+  fileOf?: (target: string) => string | undefined
+): string[][] {
+  const header = ["Source Column", "Target Column"];
+  if (fileOf) header.push("Target File(s)");
+  header.push("Confidence", "Score", "Other Potential Mappings");
+  return [
+    header,
+    ...mappings.map((m) => {
+      const mapped = m.mappedTo !== "IGNORE";
+      const row = [m.excelHeader, mapped ? m.mappedTo : ""];
+      if (fileOf) row.push(mapped ? fileOf(m.mappedTo) ?? "" : "");
+      row.push(mapped ? m.confidence : "", mapped ? `${(m.score * 100).toFixed(0)}%` : "", altsText(m));
+      return row;
+    }),
+  ];
+}
+
+// File 1 — the mapping CSV (source → target, confidence, score, and the other
+// near-tie candidates), UTF-8 with BOM + CRLF so Excel opens it cleanly.
+export function downloadMappingCsv(
+  mappings: ColumnMapping[],
+  baseName: string,
+  fileOf?: (target: string) => string | undefined
+) {
+  const body = mappingRows(mappings, fileOf).map((row) => row.map(csvCell).join(",")).join("\r\n");
   const blob = new Blob(["﻿" + body], { type: "text/csv;charset=utf-8;" });
   triggerDownload(blob, `${baseName}.csv`);
 }
@@ -59,8 +84,9 @@ export async function downloadMappingWorkbook(opts: {
   targetName: string;
   mappings: ColumnMapping[];
   fileName: string;
+  fileOf?: (target: string) => string | undefined;
 }) {
-  const { sourceRows, targetRows, sourceName, targetName, mappings, fileName } = opts;
+  const { sourceRows, targetRows, sourceName, targetName, mappings, fileName, fileOf } = opts;
   const wb = new ExcelJS.Workbook();
 
   const srcSheetName = sanitizeSheetName(sourceName, "Source");
@@ -72,10 +98,7 @@ export async function downloadMappingWorkbook(opts: {
 
   writeSheet(wb.addWorksheet(srcSheetName), sourceRows);
   writeSheet(wb.addWorksheet(tgtSheetName), targetRows);
-  writeSheet(wb.addWorksheet("Schema Mapping"), [
-    ["Source Column", "Target Column"],
-    ...mappings.map((m) => [m.excelHeader, m.mappedTo === "IGNORE" ? "" : m.mappedTo]),
-  ]);
+  writeSheet(wb.addWorksheet("Schema Mapping"), mappingRows(mappings, fileOf));
 
   const buf = await wb.xlsx.writeBuffer();
   const blob = new Blob([buf], {

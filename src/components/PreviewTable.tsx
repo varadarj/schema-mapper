@@ -51,15 +51,26 @@ interface PreviewTableProps {
   preview: PreviewData;
   origTitle?: string;
   dspTitle?: string;
+  // When true, render only the remapped (FixedRawData) side as a single table.
+  single?: boolean;
 }
 
 export function PreviewTable({
   preview,
   origTitle = "Original (Excel)",
   dspTitle = "Remapped (FixedRawData)",
+  single = false,
 }: PreviewTableProps) {
   const { origHeaders, dspHeaders, rows } = preview;
   if (!rows.length) return null;
+
+  if (single) {
+    return (
+      <div className="overflow-hidden">
+        <PreviewSide title={dspTitle} headers={dspHeaders} rows={rows.map((r) => r.remap)} />
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-7 overflow-hidden">

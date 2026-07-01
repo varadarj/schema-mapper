@@ -1,7 +1,13 @@
-import { bestMatch, AGING_FIELDS, AR_UNIQUE } from "./matchers";
+import { bestMatch, AGING_FIELDS, AR_UNIQUE } from "./matchers.ts";
 
 export type Confidence = "HIGH" | "MEDIUM" | "LOW" | "NONE";
 export type MatchMethod = "pattern" | "address" | "heuristic" | "fuzzy" | "ai" | "data";
+
+export interface MatchAlternative {
+  target: string;
+  score: number; // combined score 0..1
+  name: number; // semantic-name score 0..1
+}
 
 export interface ColumnMapping {
   excelIndex: number;
@@ -12,6 +18,8 @@ export interface ColumnMapping {
   confidence: Confidence;
   method: MatchMethod;
   required: boolean;
+  reason?: string; // optional explanation (used by the source↔target data matcher)
+  alternatives?: MatchAlternative[]; // other plausible targets (near-ties), best first
 }
 
 export interface ExcelData {
@@ -34,7 +42,8 @@ export function buildMappings(
   excelData: ExcelData,
   candidates: string[]
 ): ColumnMapping[] {
-  let mappings: ColumnMapping[] = excelData.headers.map((header, i) => {
+  let mappings: ColumnMapping[] = excelData.headers.map((rawHeader, i) => {
+    const header = rawHeader == null ? "" : String(rawHeader);
     const { field, score, method } = bestMatch(header, candidates);
     // If the matched field isn't in the candidate list, fall back to IGNORE
     const resolvedField =
@@ -57,27 +66,61 @@ export function buildMappings(
     };
   });
 
-  mappings = enforceArUniqueness(mappings);
+  mappings = enforceUniqueMapping(mappings);
   mappings = fixAddressOrder(mappings);
   return mappings;
 }
 
-// ── Enforce AR uniqueness (DEBT91PLUS is exempt) ─────────────────────────────
-export function enforceArUniqueness(mappings: ColumnMapping[]): ColumnMapping[] {
+// ── Enforce ONE-to-ONE mapping ───────────────────────────────────────────────
+// Each DSP field may be claimed by at most one column — the highest-scoring one
+// (earliest column wins ties). Every other column that resolved to the same
+// field is reset to IGNORE. DEBT91PLUS is the sole exception: multiple columns
+// may map to it (they are summed, and even processed as distinct fields).
+export function enforceUniqueMapping(mappings: ColumnMapping[]): ColumnMapping[] {
   const result = mappings.map((m) => ({ ...m }));
-  for (const field of AR_UNIQUE) {
-    const hits = result
-      .map((m, i) => ({ i, m }))
-      .filter(({ m }) => m.mappedTo === field);
-    if (hits.length > 1) {
-      hits.sort((a, b) => b.m.score - a.m.score);
-      for (let k = 1; k < hits.length; k++) {
-        result[hits[k].i].mappedTo = "IGNORE";
-        result[hits[k].i].confidence = "NONE";
-        result[hits[k].i].score = 0;
-      }
+
+  const byField = new Map<string, number[]>();
+  result.forEach((m, i) => {
+    if (m.mappedTo === "IGNORE" || m.mappedTo === "DEBT91PLUS") return;
+    const idxs = byField.get(m.mappedTo) ?? [];
+    idxs.push(i);
+    byField.set(m.mappedTo, idxs);
+  });
+
+  for (const idxs of byField.values()) {
+    if (idxs.length <= 1) continue;
+    // Highest score first; ties broken by earliest column index.
+    idxs.sort((a, b) => result[b].score - result[a].score || a - b);
+    for (let k = 1; k < idxs.length; k++) {
+      const j = idxs[k];
+      result[j] = {
+        ...result[j],
+        mappedTo: "IGNORE",
+        confidence: "NONE",
+        score: 0,
+        required: false,
+      };
     }
   }
+  return result;
+}
+
+// ── Invoice amount fallback ──────────────────────────────────────────────────
+// INVAMT is required for invoice providers. If nothing is mapped to it, map the
+// first column whose header contains "amount" (e.g. "Open Amount", "Invoice
+// Amount") to INVAMT.
+export function ensureInvoiceAmount(mappings: ColumnMapping[]): ColumnMapping[] {
+  if (mappings.some((m) => m.mappedTo === "INVAMT")) return mappings;
+  const idx = mappings.findIndex((m) => /amount/i.test(m.excelHeader));
+  if (idx < 0) return mappings;
+  const result = mappings.map((m) => ({ ...m }));
+  result[idx] = {
+    ...result[idx],
+    mappedTo: "INVAMT",
+    confidence: "HIGH",
+    score: 1,
+    required: false,
+  };
   return result;
 }
 
@@ -208,4 +251,82 @@ export function buildPreviewRows(
   }));
 
   return { origHeaders, dspHeaders, rows };
+}
+
+// ── Joined FixedRawData preview (multi-file) ─────────────────────────────────
+// Mirrors the generated provider: inner-joins each file's mapped data on the
+// join key and shows the combined row set (union of DSP columns), instead of
+// previewing each file separately. Joins over the full data rows (not just the
+// sample) so the preview can fill up to `count` rows. Join keys are uppercased
+// (and trimmed) on both sides before matching; iteration stops once `count`
+// rows have been joined.
+export interface JoinPreviewSource {
+  rows: string[][]; // data rows (no header), columns positional by excelIndex
+  mappings: ColumnMapping[];
+}
+
+export function buildJoinedPreview(
+  sources: JoinPreviewSource[],
+  joinKey: string,
+  count = 50
+): PreviewData {
+  const empty: PreviewData = { origHeaders: [], dspHeaders: [], rows: [] };
+  if (sources.length < 2 || !joinKey) return empty;
+
+  const perSource = sources.map((s) => {
+    const mapped = s.mappings.filter((m) => m.mappedTo !== "IGNORE");
+    const joinM = mapped.find((m) => m.mappedTo === joinKey);
+    return { mapped, joinIdx: joinM ? joinM.excelIndex : -1, rows: s.rows };
+  });
+
+  // Every source must map the join key to be joinable.
+  if (perSource.some((p) => p.joinIdx < 0)) return empty;
+
+  // Union DSP columns (dedupe by field, first source wins) + where each comes from.
+  const seen = new Set<string>();
+  const cols: { dsp: string; src: number; idx: number }[] = [];
+  perSource.forEach((p, si) => {
+    for (const m of p.mapped) {
+      if (seen.has(m.mappedTo)) continue;
+      seen.add(m.mappedTo);
+      cols.push({ dsp: m.mappedTo, src: si, idx: m.excelIndex });
+    }
+  });
+
+  // Uppercase + trim the join field on both sides before matching.
+  const key = (v: string | number | null) => String(v ?? "").trim().toUpperCase();
+
+  // key → first matching row, for each non-primary source
+  const lookups = perSource.slice(1).map((p) => {
+    const map = new Map<string, string[]>();
+    for (const row of p.rows) {
+      const k = key(row[p.joinIdx]);
+      if (k && !map.has(k)) map.set(k, row);
+    }
+    return map;
+  });
+
+  const primary = perSource[0];
+  const rows: PreviewData["rows"] = [];
+  for (const prow of primary.rows) {
+    if (rows.length >= count) break; // stop once `count` rows have been joined
+    const k = key(prow[primary.joinIdx]);
+    if (!k) continue;
+    const srcRows: (string[] | undefined)[] = [prow];
+    let ok = true;
+    for (let li = 0; li < lookups.length; li++) {
+      const match = lookups[li].get(k);
+      if (!match) { ok = false; break; }
+      srcRows[li + 1] = match;
+    }
+    if (!ok) continue;
+    const vals = cols.map((c) => {
+      const r = srcRows[c.src];
+      return r ? String(r[c.idx] ?? "") : "";
+    });
+    rows.push({ orig: vals, remap: vals });
+  }
+
+  const headers = cols.map((c) => c.dsp);
+  return { origHeaders: headers, dspHeaders: headers, rows };
 }

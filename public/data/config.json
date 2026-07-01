@@ -21,6 +21,10 @@
     "DEBT90DAY",
     "DEBT91PLUS",
     "VAT",
-    "AVGDTPC"
+    "AVGDTPC",
+    "INVDATE",
+    "INVAMT",
+    "DUEDATE",
+    "BVDID"
   ]
 }

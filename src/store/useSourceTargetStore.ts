@@ -5,28 +5,49 @@ import {
   buildDataMappings,
   applyDataMappingChange,
   findDataConflict,
+  scoreColumnPair,
 } from "../lib/dataMatch";
+import { sampleSourceFiles, sampleTargetFiles } from "../lib/csvStream";
 import { remapSourceTargetWithAI } from "../lib/ai";
 import { useApiKeyStore } from "./useApiKeyStore";
 import type { PendingConflict } from "./useMappingStore";
 
+function label(names: string[]): string {
+  if (names.length === 0) return "";
+  return names.length === 1 ? names[0] : `${names.length} files`;
+}
+
+export const DEFAULT_SAMPLE_SIZE = 20000;
+
 interface SourceTargetStore {
-  // data
+  // source (one shared schema; many row-shards allowed)
   sourceData: ExcelData | null;
   sourceName: string;
-  sourceRows: string[][]; // full header + rows, for export
+  sourceFiles: File[];
+  sourceFileNames: string[];
+  sourceRows: string[][]; // header + sampled rows, for export
+  sourceWarnings: string[];
+  loadingSource: boolean;
+
+  // target (union of possibly-different schemas)
   targetData: ExcelData | null;
   targetName: string;
+  targetFiles: File[];
+  targetFileNames: string[];
+  targetColFiles: Map<string, string[]>; // target column → file(s) it came from
   targetRows: string[][];
+  loadingTarget: boolean;
+
+  sampleSize: number;
 
   mappings: ColumnMapping[];
   preview: PreviewData | null;
   pendingConflict: PendingConflict | null;
   aiLoading: boolean;
 
-  // actions
-  setSource: (data: ExcelData, name: string, allRows: string[][]) => void;
-  setTarget: (data: ExcelData, name: string, allRows: string[][]) => void;
+  loadSourceFiles: (files: File[]) => Promise<void>;
+  loadTargetFiles: (files: File[]) => Promise<void>;
+  setSampleSize: (n: number) => Promise<void>;
   runDataMatching: () => void;
   handleMappingChange: (rowIdx: number, newField: string) => void;
   confirmConflict: () => void;
@@ -38,20 +59,70 @@ interface SourceTargetStore {
 export const useSourceTargetStore = create<SourceTargetStore>((set, get) => ({
   sourceData: null,
   sourceName: "",
+  sourceFiles: [],
+  sourceFileNames: [],
   sourceRows: [],
+  sourceWarnings: [],
+  loadingSource: false,
   targetData: null,
   targetName: "",
+  targetFiles: [],
+  targetFileNames: [],
+  targetColFiles: new Map(),
   targetRows: [],
+  loadingTarget: false,
+  sampleSize: DEFAULT_SAMPLE_SIZE,
   mappings: [],
   preview: null,
   pendingConflict: null,
   aiLoading: false,
 
-  setSource: (data, name, allRows) =>
-    set({ sourceData: data, sourceName: name, sourceRows: allRows, mappings: [], preview: null }),
+  loadSourceFiles: async (files) => {
+    if (!files.length) return;
+    set({ loadingSource: true, sourceFiles: files });
+    try {
+      const res = await sampleSourceFiles(files, get().sampleSize);
+      set({
+        sourceData: res.data,
+        sourceFileNames: res.fileNames,
+        sourceName: label(res.fileNames),
+        sourceRows: res.rows,
+        sourceWarnings: res.warnings,
+        mappings: [],
+        preview: null,
+      });
+    } finally {
+      set({ loadingSource: false });
+    }
+  },
 
-  setTarget: (data, name, allRows) =>
-    set({ targetData: data, targetName: name, targetRows: allRows, mappings: [], preview: null }),
+  loadTargetFiles: async (files) => {
+    if (!files.length) return;
+    set({ loadingTarget: true, targetFiles: files });
+    try {
+      const res = await sampleTargetFiles(files, get().sampleSize);
+      set({
+        targetData: res.data,
+        targetFileNames: res.fileNames,
+        targetName: label(res.fileNames),
+        targetColFiles: res.colFiles,
+        targetRows: res.rows,
+        mappings: [],
+        preview: null,
+      });
+    } finally {
+      set({ loadingTarget: false });
+    }
+  },
+
+  // Change the sample size and re-read whatever files are already selected.
+  setSampleSize: async (n) => {
+    const size = Math.max(100, Math.floor(n) || DEFAULT_SAMPLE_SIZE);
+    set({ sampleSize: size });
+    const { sourceFiles, targetFiles, loadSourceFiles, loadTargetFiles } = get();
+    if (sourceFiles.length) await loadSourceFiles(sourceFiles);
+    if (targetFiles.length) await loadTargetFiles(targetFiles);
+  },
 
   runDataMatching: () => {
     const { sourceData, targetData } = get();
@@ -61,13 +132,17 @@ export const useSourceTargetStore = create<SourceTargetStore>((set, get) => ({
   },
 
   handleMappingChange: (rowIdx, newField) => {
-    const { mappings, sourceData } = get();
+    const { mappings, sourceData, targetData } = get();
     const conflictIdx = findDataConflict(mappings, newField, rowIdx);
     if (conflictIdx >= 0) {
       set({ pendingConflict: { newField, oldIdx: conflictIdx, newIdx: rowIdx } });
       return;
     }
-    const updated = applyDataMappingChange(mappings, rowIdx, newField);
+    const info =
+      newField !== "IGNORE" && sourceData && targetData
+        ? scoreColumnPair(sourceData, targetData, rowIdx, newField)
+        : undefined;
+    const updated = applyDataMappingChange(mappings, rowIdx, newField, info);
     set({
       mappings: updated,
       preview: sourceData ? buildPreviewRows(sourceData, updated) : null,
@@ -75,7 +150,7 @@ export const useSourceTargetStore = create<SourceTargetStore>((set, get) => ({
   },
 
   confirmConflict: () => {
-    const { pendingConflict, mappings, sourceData } = get();
+    const { pendingConflict, mappings, sourceData, targetData } = get();
     if (!pendingConflict) return;
 
     let updated = mappings.map((m) => ({ ...m }));
@@ -84,8 +159,13 @@ export const useSourceTargetStore = create<SourceTargetStore>((set, get) => ({
       mappedTo: "IGNORE",
       confidence: "NONE" as const,
       score: 0,
+      reason: "unmapped (reassigned to another column)",
     };
-    updated = applyDataMappingChange(updated, pendingConflict.newIdx, pendingConflict.newField);
+    const info =
+      sourceData && targetData
+        ? scoreColumnPair(sourceData, targetData, pendingConflict.newIdx, pendingConflict.newField)
+        : undefined;
+    updated = applyDataMappingChange(updated, pendingConflict.newIdx, pendingConflict.newField, info);
 
     set({
       mappings: updated,
@@ -113,9 +193,15 @@ export const useSourceTargetStore = create<SourceTargetStore>((set, get) => ({
     set({
       sourceData: null,
       sourceName: "",
+      sourceFiles: [],
+      sourceFileNames: [],
       sourceRows: [],
+      sourceWarnings: [],
       targetData: null,
       targetName: "",
+      targetFiles: [],
+      targetFileNames: [],
+      targetColFiles: new Map(),
       targetRows: [],
       mappings: [],
       preview: null,

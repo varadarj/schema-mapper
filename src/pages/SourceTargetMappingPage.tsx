@@ -21,26 +21,34 @@ import { ConflictModal } from "../components/ConflictModal";
 import { ApiKeyPanel } from "../components/ApiKeyPanel";
 import { useSourceTargetStore } from "../store/useSourceTargetStore";
 import { useApiKeyStore } from "../store/useApiKeyStore";
-import { parseFile } from "../lib/fileParse";
+
+const ACCEPT = ".csv,.txt,.tsv,.xlsx,.xls";
 
 export function SourceTargetMappingPage() {
   const navigate = useNavigate();
   const [showApiPanel, setShowApiPanel] = useState(false);
-
   const sourceInputRef = useRef<HTMLInputElement>(null);
   const targetInputRef = useRef<HTMLInputElement>(null);
 
   const {
     sourceData,
     sourceName,
+    sourceFileNames,
+    sourceWarnings,
+    loadingSource,
     targetData,
     targetName,
+    targetFileNames,
+    targetColFiles,
+    loadingTarget,
+    sampleSize,
     mappings,
     preview,
     pendingConflict,
     aiLoading,
-    setSource,
-    setTarget,
+    loadSourceFiles,
+    loadTargetFiles,
+    setSampleSize,
     runDataMatching,
     handleMappingChange,
     confirmConflict,
@@ -51,7 +59,13 @@ export function SourceTargetMappingPage() {
   const { apiTested } = useApiKeyStore();
 
   const hasMappings = mappings.length > 0;
-  const canRun = !!sourceData && !!targetData;
+  const canRun = !!sourceData && !!targetData && !loadingSource && !loadingTarget;
+  const allOptions = ["IGNORE", ...(targetData?.headers ?? [])];
+  // Show which target file a column came from only when there's more than one.
+  const multiTarget = targetFileNames.length > 1;
+  const targetFileOf = multiTarget
+    ? (col: string) => targetColFiles.get(col)?.join(", ")
+    : undefined;
 
   const stats = {
     high: mappings.filter((m) => m.confidence === "HIGH").length,
@@ -59,18 +73,6 @@ export function SourceTargetMappingPage() {
     lo: mappings.filter((m) => m.confidence === "LOW").length,
     none: mappings.filter((m) => m.confidence === "NONE").length,
   };
-
-  const allOptions = ["IGNORE", ...(targetData?.headers ?? [])];
-
-  async function handleUpload(file: File, which: "source" | "target") {
-    const parsed = await parseFile(file);
-    if (!parsed) {
-      alert("File appears empty.");
-      return;
-    }
-    if (which === "source") setSource(parsed.data, parsed.fileName, parsed.allRows);
-    else setTarget(parsed.data, parsed.fileName, parsed.allRows);
-  }
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8 space-y-6">
@@ -91,7 +93,6 @@ export function SourceTargetMappingPage() {
             {apiTested ? "AI ready" : "AI settings"}
             {showApiPanel ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
           </Button>
-
           {apiTested && hasMappings && (
             <Button
               variant="outline"
@@ -113,9 +114,28 @@ export function SourceTargetMappingPage() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Source ↔ Target mapping</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Upload two files containing the same data. Columns are matched by the
-          values inside them, so renamed fields are detected automatically.
+          Upload source and target files — each side can be a single file or many shards.
+          Large files are streamed (only the header + a sample of rows is read), so multi-GB
+          files won't crash the tab. Columns are matched by data shape and semantic name.
         </p>
+      </div>
+
+      {/* Sample size */}
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <span>Rows sampled per side:</span>
+        <input
+          type="number"
+          min={100}
+          step={1000}
+          defaultValue={sampleSize}
+          disabled={loadingSource || loadingTarget}
+          onBlur={(e) => {
+            const v = parseInt(e.target.value, 10);
+            if (v && v !== sampleSize) setSampleSize(v);
+          }}
+          className="w-28 h-7 rounded border px-2 text-xs"
+        />
+        <span>Larger = more accurate shapes, slower. Re-reads files on change.</span>
       </div>
 
       {/* Upload cards */}
@@ -123,29 +143,44 @@ export function SourceTargetMappingPage() {
         <Card>
           <CardHeader className="pb-3 pt-4 px-4">
             <CardTitle className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
-              Source file
+              Source file(s) — one shared schema
             </CardTitle>
           </CardHeader>
-          <CardContent className="px-4 pb-4">
+          <CardContent className="px-4 pb-4 space-y-2">
             <DropZone
               loaded={!!sourceData}
-              label={sourceData ? sourceName : "Click to upload .xlsx / .xls / .csv"}
+              label={
+                loadingSource
+                  ? "Reading…"
+                  : sourceData
+                  ? sourceName
+                  : "Click to upload .csv / .txt / .tsv / .xlsx (multiple allowed)"
+              }
               sublabel={
                 sourceData
-                  ? `${sourceData.headers.length} columns · ${sourceData.totalRows} rows`
+                  ? `${sourceData.headers.length} columns · ${sourceData.sampleRows.length.toLocaleString()} sampled rows`
                   : undefined
               }
-              icon="📥"
+              icon={loadingSource ? "⏳" : "📥"}
               onClick={() => sourceInputRef.current?.click()}
             />
+            {sourceFileNames.length > 1 && (
+              <p className="text-[11px] text-muted-foreground truncate" title={sourceFileNames.join(", ")}>
+                {sourceFileNames.join(", ")}
+              </p>
+            )}
+            {sourceWarnings.map((w, i) => (
+              <p key={i} className="text-[11px] text-amber-600">⚠ {w}</p>
+            ))}
             <input
               ref={sourceInputRef}
               type="file"
-              accept=".xlsx,.xls,.csv"
+              accept={ACCEPT}
+              multiple
               className="hidden"
               onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) handleUpload(f, "source");
+                const files = e.target.files ? Array.from(e.target.files) : [];
+                if (files.length) loadSourceFiles(files);
                 e.target.value = "";
               }}
             />
@@ -155,29 +190,41 @@ export function SourceTargetMappingPage() {
         <Card>
           <CardHeader className="pb-3 pt-4 px-4">
             <CardTitle className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
-              Target file
+              Target file(s) — combined into one schema
             </CardTitle>
           </CardHeader>
-          <CardContent className="px-4 pb-4">
+          <CardContent className="px-4 pb-4 space-y-2">
             <DropZone
               loaded={!!targetData}
-              label={targetData ? targetName : "Click to upload .xlsx / .xls / .csv"}
+              label={
+                loadingTarget
+                  ? "Reading…"
+                  : targetData
+                  ? targetName
+                  : "Click to upload .csv / .txt / .tsv / .xlsx (multiple allowed)"
+              }
               sublabel={
                 targetData
-                  ? `${targetData.headers.length} columns · ${targetData.totalRows} rows`
+                  ? `${targetData.headers.length} columns (union) · ${targetData.sampleRows.length.toLocaleString()} sampled rows`
                   : undefined
               }
-              icon="🎯"
+              icon={loadingTarget ? "⏳" : "🎯"}
               onClick={() => targetInputRef.current?.click()}
             />
+            {targetFileNames.length > 1 && (
+              <p className="text-[11px] text-muted-foreground truncate" title={targetFileNames.join(", ")}>
+                {targetFileNames.join(", ")}
+              </p>
+            )}
             <input
               ref={targetInputRef}
               type="file"
-              accept=".xlsx,.xls,.csv"
+              accept={ACCEPT}
+              multiple
               className="hidden"
               onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) handleUpload(f, "target");
+                const files = e.target.files ? Array.from(e.target.files) : [];
+                if (files.length) loadTargetFiles(files);
                 e.target.value = "";
               }}
             />
@@ -224,14 +271,13 @@ export function SourceTargetMappingPage() {
               mappings={mappings}
               allOptions={allOptions}
               onMappingChange={handleMappingChange}
+              targetFileOf={targetFileOf}
             />
           </div>
 
           {preview && preview.rows.length > 0 && (
             <div>
-              <h2 className="text-sm font-medium mb-2">
-                Data preview — {preview.rows.length} random rows
-              </h2>
+              <h2 className="text-sm font-medium mb-2">Data preview — {preview.rows.length} sampled rows</h2>
               <PreviewTable
                 preview={preview}
                 origTitle={`Source — ${sourceName}`}

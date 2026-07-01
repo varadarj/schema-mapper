@@ -1,0 +1,7 @@
+entity_id,company_name,city,country,outstanding_amount
+E1001,Acme Industries,Chicago,USA,15230.50
+E1002,Brightpath Logistics,Toronto,Canada,8920.00
+E1003,Cobalt Systems,London,UK,45100.75
+E1004,Delphi Foods,Munich,Germany,3320.10
+E1005,Evergreen Textiles,Mumbai,India,67800.00
+E1006,Falcon Metals,Sydney,Australia,12050.25
