@@ -9,17 +9,7 @@
  * mapped to the target column the SAME entities agree with (per-entity
  * agreement). Value-set overlap is a secondary tiebreaker. Run once per target.
  *
- * Usage:
- *   node scripts/st-map.ts --source <dir|glob|list> --target <file|dir|glob> --key srcCol=tgtCol [options]
- *   --out        output mapping CSV (default ./schema-mapping.csv)
- *   --matches    stop once this many entities are joined (default 1000; a few hundred is plenty)
- *   --stall      stop if this many rows scanned with no new match (default 1000000)
- *   --maxEntities source keys to index (default 200000)
- *   --scan       hard cap on rows read per side (default 20000000)
- *   --delimiter  field delimiter (default ",")
- *
- * Example:
- *   node scripts/st-map.ts --source "C:/data/part-*" --target "C:/data/location.csv" --key entityId=ECID --out map_location.csv
+ * Run with --help for usage.
  */
 
 import fs from "node:fs";
@@ -27,16 +17,47 @@ import path from "node:path";
 import readline from "node:readline";
 import { buildConfirmedMappings, canonicalValue, type MatchRow } from "../src/lib/entityMatch.ts";
 
+const USAGE = `st-map - Source <-> Target schema mapping for large, sharded CSV files.
+
+Usage:
+  node scripts/st-map.ts --source <dir|glob|list> --target <file|dir|glob> --key srcCol=tgtCol [options]
+
+Required:
+  --source <spec>      source CSV: file, directory, glob, or comma-separated list
+  --target <spec>      target CSV: file, directory, glob, or comma-separated list
+  --key src=tgt        join key as sourceColumn=targetColumn (e.g. entityId=ECID)
+
+Options:
+  --out <file>         output mapping CSV (default ./schema-mapping.csv)
+  --matches <n>        stop once this many entities are joined (default 300; a few hundred is plenty)
+  --stall <n>          stop if this many rows are scanned with no new match (default 1000000)
+  --maxEntities <n>    source keys to index (default 200000)
+  --scan <n>           hard cap on rows read per side (default 20000000)
+  --delimiter <char>   field delimiter (default ",")
+  -h, --help           print this help and exit
+
+Example:
+  node scripts/st-map.ts --source "C:/data/part-*" --target "C:/data/location.csv" --key entityId=ECID --out map_location.csv
+
+After writing --out, every map_*.csv sitting beside it is joined into
+schema-mapping-combined.csv (one row per source column, one column per target file).`;
+
+// Short flags, mapped onto their long names.
+const SHORT_FLAGS: Record<string, string> = { h: "help" };
+
+const isFlag = (s: string) => s.startsWith("--") || /^-[a-zA-Z]$/.test(s);
+
 function parseArgs(argv: string[]): Record<string, string> {
   const out: Record<string, string> = {};
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (!a.startsWith("--")) continue;
+    if (!isFlag(a)) continue;
+    const name = a.startsWith("--") ? a.slice(2) : SHORT_FLAGS[a.slice(1)] ?? a.slice(1);
     const next = argv[i + 1];
-    if (next !== undefined && !next.startsWith("--")) {
-      out[a.slice(2)] = next;
+    if (next !== undefined && !isFlag(next)) {
+      out[name] = next;
       i++;
-    } else out[a.slice(2)] = "true";
+    } else out[name] = "true";
   }
   return out;
 }
@@ -179,14 +200,16 @@ function writeCombined(outDir: string): { dest: string; files: string[] } | null
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  if (!args.source || !args.target || !args.key || args.help === "true") {
-    console.log(
-      "Usage: node scripts/st-map.ts --source <dir|glob|list> --target <file|dir|glob> --key srcCol=tgtCol\n" +
-        "        [--out file.csv] [--matches 1000] [--stall 1000000] [--maxEntities 200000] [--scan 20000000] [--delimiter ,]\n" +
-        "  --matches  stop once this many entities are joined (a few hundred is enough to decide)\n" +
-        "  --stall    stop if this many rows are scanned with no new match (matches dried up)"
-    );
-    process.exit(args.help === "true" ? 0 : 1);
+  if (args.help === "true") {
+    console.log(USAGE);
+    return;
+  }
+
+  const missing = (["source", "target", "key"] as const).filter((k) => !args[k]);
+  if (missing.length) {
+    console.error(`Missing required argument(s): ${missing.map((k) => `--${k}`).join(", ")}\n`);
+    console.error(USAGE);
+    process.exit(1);
   }
 
   const delimiter = args.delimiter ?? ",";

@@ -5,10 +5,7 @@
  * counting how many values each target ID column shares with each source ID
  * column. Also prints example values so you can spot format mismatches.
  *
- * Usage:
- *   node scripts/probe-keys.ts --source <dir|glob|list> --target <file> [options]
- *   [--sourceCols a,b]  [--targetCols c,d]   (default: any header containing "id")
- *   [--maxEntities 50000] [--scan 3000000] [--rows 5] [--delimiter ,]
+ * Run with --help for usage.
  */
 
 import fs from "node:fs";
@@ -16,16 +13,45 @@ import path from "node:path";
 import readline from "node:readline";
 import { canonicalValue } from "../src/lib/entityMatch.ts";
 
+const USAGE = `probe-keys - find which source/target ID columns actually share values.
+
+Usage:
+  node scripts/probe-keys.ts --source <dir|glob|list> --target <file|dir|glob> [options]
+
+Required:
+  --source <spec>      source CSV: file, directory, glob, or comma-separated list
+  --target <spec>      target CSV: file, directory, glob, or comma-separated list
+
+Options:
+  --sourceCols a,b     source ID columns to test (default: any header containing "id")
+  --targetCols c,d     target ID columns to test (default: any header containing "id")
+  --maxEntities <n>    source values to index per column (default 200000)
+  --scan <n>           hard cap on rows read per side (default 3000000)
+  --rows <n>           example values to print per column (default 5)
+  --delimiter <char>   field delimiter (default ",")
+  -h, --help           print this help and exit
+
+Example:
+  node scripts/probe-keys.ts --source "C:/data/part-*" --target "C:/data/location.csv"
+
+Use the winning pair as st-map's --key srcCol=tgtCol.`;
+
+// Short flags, mapped onto their long names.
+const SHORT_FLAGS: Record<string, string> = { h: "help" };
+
+const isFlag = (s: string) => s.startsWith("--") || /^-[a-zA-Z]$/.test(s);
+
 function parseArgs(argv: string[]): Record<string, string> {
   const out: Record<string, string> = {};
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (!a.startsWith("--")) continue;
+    if (!isFlag(a)) continue;
+    const name = a.startsWith("--") ? a.slice(2) : SHORT_FLAGS[a.slice(1)] ?? a.slice(1);
     const next = argv[i + 1];
-    if (next !== undefined && !next.startsWith("--")) {
-      out[a.slice(2)] = next;
+    if (next !== undefined && !isFlag(next)) {
+      out[name] = next;
       i++;
-    } else out[a.slice(2)] = "true";
+    } else out[name] = "true";
   }
   return out;
 }
@@ -89,8 +115,15 @@ async function streamLines(fp: string, onRec: (line: string, i: number) => boole
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  if (!args.source || !args.target) {
-    console.log("Usage: node scripts/probe-keys.ts --source <dir|glob|list> --target <file> [--sourceCols a,b] [--targetCols c,d] [--scan N]");
+  if (args.help === "true") {
+    console.log(USAGE);
+    return;
+  }
+
+  const missing = (["source", "target"] as const).filter((k) => !args[k]);
+  if (missing.length) {
+    console.error(`Missing required argument(s): ${missing.map((k) => `--${k}`).join(", ")}\n`);
+    console.error(USAGE);
     process.exit(1);
   }
   const d = args.delimiter ?? ",";
