@@ -115,28 +115,85 @@ export function buildExcelData(allRows: string[][], totalRows: number): ExcelDat
   };
 }
 
+// ── Sheet selection ───────────────────────────────────────────────────────────
+// A workbook can hold several sheets; the user picks which one to map. The choice
+// is carried as File → sheet name so it survives re-reads (e.g. sample-size changes).
+export interface SheetInfo {
+  name: string;
+  rowCount: number;
+  colCount: number;
+}
+
+export type SheetSelection = Map<File, string>;
+
+const TEXT_FILE = /\.(csv|txt|tsv)$/i;
+
+// Listing sheets and then reading one would parse the workbook twice, so the
+// listing pass caches its parse for parseFile() to reuse. parseFile() drops the
+// entry afterwards — keeping workbooks around would double the memory of every
+// upload on top of the row arrays the stores already hold.
+const workbookCache = new WeakMap<File, ExcelJS.Workbook>();
+
+async function loadWorkbook(file: File): Promise<ExcelJS.Workbook> {
+  const cached = workbookCache.get(file);
+  if (cached) return cached;
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(await file.arrayBuffer());
+  workbookCache.set(file, workbook);
+  return workbook;
+}
+
+// Sheets available in an uploaded file. Empty sheets are dropped (nothing to
+// map) and text files have no sheets at all, so both yield [] — meaning "don't
+// ask, there's only one thing to read".
+export async function listSheets(file: File): Promise<SheetInfo[]> {
+  if (TEXT_FILE.test(file.name)) return [];
+  let workbook: ExcelJS.Workbook;
+  try {
+    workbook = await loadWorkbook(file);
+  } catch {
+    return []; // unreadable (e.g. legacy .xls) — let parseFile report it
+  }
+  return workbook.worksheets
+    .filter((ws) => ws.rowCount > 0)
+    .map((ws) => ({ name: ws.name, rowCount: ws.rowCount, colCount: ws.columnCount }));
+}
+
 export interface ParsedFile {
   data: ExcelData;
   fileName: string;
+  // Sheet the rows came from — set only when the workbook held more than one,
+  // i.e. when which sheet this is actually tells the user something.
+  sheetName?: string;
   // Full header + data rows (header at index 0), used for export.
   allRows: string[][];
 }
 
 // Parse an uploaded .csv / .xlsx / .xls into sampled ExcelData + full rows.
-export async function parseFile(file: File): Promise<ParsedFile | null> {
+// `sheetName` picks a sheet in a multi-sheet workbook; without it the first
+// non-empty sheet is used.
+export async function parseFile(
+  file: File,
+  sheetName?: string
+): Promise<ParsedFile | null> {
   const fileName = file.name.replace(/\.[^.]+$/, "");
   const isCSV = file.name.toLowerCase().endsWith(".csv");
 
   let allRows: string[][];
+  let usedSheet: string | undefined;
   if (isCSV) {
     const text = await file.text();
     allRows = parseCSV(text);
   } else {
-    const buf = await file.arrayBuffer();
-    const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(buf);
-    const worksheet = workbook.worksheets[0];
+    const workbook = await loadWorkbook(file);
+    workbookCache.delete(file);
+    const nonEmpty = workbook.worksheets.filter((ws) => ws.rowCount > 0);
+    const worksheet =
+      (sheetName ? workbook.worksheets.find((ws) => ws.name === sheetName) : undefined) ??
+      nonEmpty[0] ??
+      workbook.worksheets[0];
     if (!worksheet) return null;
+    if (nonEmpty.length > 1) usedSheet = worksheet.name;
 
     allRows = [];
     worksheet.eachRow({ includeEmpty: false }, (row) => {
@@ -164,6 +221,7 @@ export async function parseFile(file: File): Promise<ParsedFile | null> {
   return {
     data: buildExcelData(normalized, normalized.length - 1),
     fileName,
+    sheetName: usedSheet,
     allRows: normalized,
   };
 }

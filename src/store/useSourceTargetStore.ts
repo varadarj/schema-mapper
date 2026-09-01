@@ -8,6 +8,7 @@ import {
   scoreColumnPair,
 } from "../lib/dataMatch";
 import { sampleSourceFiles, sampleTargetFiles } from "../lib/csvStream";
+import type { SheetSelection } from "../lib/fileParse";
 import { remapSourceTargetWithAI } from "../lib/ai";
 import { useApiKeyStore } from "./useApiKeyStore";
 import type { PendingConflict } from "./useMappingStore";
@@ -24,6 +25,7 @@ interface SourceTargetStore {
   sourceData: ExcelData | null;
   sourceName: string;
   sourceFiles: File[];
+  sourceSheets: SheetSelection; // chosen sheet per multi-sheet workbook
   sourceFileNames: string[];
   sourceRows: string[][]; // header + sampled rows, for export
   sourceWarnings: string[];
@@ -33,6 +35,7 @@ interface SourceTargetStore {
   targetData: ExcelData | null;
   targetName: string;
   targetFiles: File[];
+  targetSheets: SheetSelection;
   targetFileNames: string[];
   targetColFiles: Map<string, string[]>; // target column → file(s) it came from
   targetRows: string[][];
@@ -45,8 +48,8 @@ interface SourceTargetStore {
   pendingConflict: PendingConflict | null;
   aiLoading: boolean;
 
-  loadSourceFiles: (files: File[]) => Promise<void>;
-  loadTargetFiles: (files: File[]) => Promise<void>;
+  loadSourceFiles: (files: File[], sheets?: SheetSelection) => Promise<void>;
+  loadTargetFiles: (files: File[], sheets?: SheetSelection) => Promise<void>;
   setSampleSize: (n: number) => Promise<void>;
   runDataMatching: () => void;
   handleMappingChange: (rowIdx: number, newField: string) => void;
@@ -60,6 +63,7 @@ export const useSourceTargetStore = create<SourceTargetStore>((set, get) => ({
   sourceData: null,
   sourceName: "",
   sourceFiles: [],
+  sourceSheets: new Map(),
   sourceFileNames: [],
   sourceRows: [],
   sourceWarnings: [],
@@ -67,6 +71,7 @@ export const useSourceTargetStore = create<SourceTargetStore>((set, get) => ({
   targetData: null,
   targetName: "",
   targetFiles: [],
+  targetSheets: new Map(),
   targetFileNames: [],
   targetColFiles: new Map(),
   targetRows: [],
@@ -77,11 +82,12 @@ export const useSourceTargetStore = create<SourceTargetStore>((set, get) => ({
   pendingConflict: null,
   aiLoading: false,
 
-  loadSourceFiles: async (files) => {
+  loadSourceFiles: async (files, sheets) => {
     if (!files.length) return;
-    set({ loadingSource: true, sourceFiles: files });
+    const sel = sheets ?? new Map();
+    set({ loadingSource: true, sourceFiles: files, sourceSheets: sel });
     try {
-      const res = await sampleSourceFiles(files, get().sampleSize);
+      const res = await sampleSourceFiles(files, get().sampleSize, sel);
       set({
         sourceData: res.data,
         sourceFileNames: res.fileNames,
@@ -96,11 +102,12 @@ export const useSourceTargetStore = create<SourceTargetStore>((set, get) => ({
     }
   },
 
-  loadTargetFiles: async (files) => {
+  loadTargetFiles: async (files, sheets) => {
     if (!files.length) return;
-    set({ loadingTarget: true, targetFiles: files });
+    const sel = sheets ?? new Map();
+    set({ loadingTarget: true, targetFiles: files, targetSheets: sel });
     try {
-      const res = await sampleTargetFiles(files, get().sampleSize);
+      const res = await sampleTargetFiles(files, get().sampleSize, sel);
       set({
         targetData: res.data,
         targetFileNames: res.fileNames,
@@ -119,9 +126,9 @@ export const useSourceTargetStore = create<SourceTargetStore>((set, get) => ({
   setSampleSize: async (n) => {
     const size = Math.max(100, Math.floor(n) || DEFAULT_SAMPLE_SIZE);
     set({ sampleSize: size });
-    const { sourceFiles, targetFiles, loadSourceFiles, loadTargetFiles } = get();
-    if (sourceFiles.length) await loadSourceFiles(sourceFiles);
-    if (targetFiles.length) await loadTargetFiles(targetFiles);
+    const { sourceFiles, sourceSheets, targetFiles, targetSheets, loadSourceFiles, loadTargetFiles } = get();
+    if (sourceFiles.length) await loadSourceFiles(sourceFiles, sourceSheets);
+    if (targetFiles.length) await loadTargetFiles(targetFiles, targetSheets);
   },
 
   runDataMatching: () => {
@@ -194,12 +201,14 @@ export const useSourceTargetStore = create<SourceTargetStore>((set, get) => ({
       sourceData: null,
       sourceName: "",
       sourceFiles: [],
+      sourceSheets: new Map(),
       sourceFileNames: [],
       sourceRows: [],
       sourceWarnings: [],
       targetData: null,
       targetName: "",
       targetFiles: [],
+      targetSheets: new Map(),
       targetFileNames: [],
       targetColFiles: new Map(),
       targetRows: [],

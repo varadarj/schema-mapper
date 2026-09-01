@@ -21,6 +21,7 @@ import { ConflictModal } from "../components/ConflictModal";
 import { ApiKeyPanel } from "../components/ApiKeyPanel";
 import { useSourceTargetStore } from "../store/useSourceTargetStore";
 import { useApiKeyStore } from "../store/useApiKeyStore";
+import { useSheetPicker } from "../hooks/useSheetPicker";
 
 const ACCEPT = ".csv,.txt,.tsv,.xlsx,.xls";
 
@@ -29,6 +30,10 @@ export function SourceTargetMappingPage() {
   const [showApiPanel, setShowApiPanel] = useState(false);
   const sourceInputRef = useRef<HTMLInputElement>(null);
   const targetInputRef = useRef<HTMLInputElement>(null);
+  // One picker per side — each side's dialog is independent, so picking sheets for
+  // the source can't clobber a target upload that's mid-prompt.
+  const sourcePicker = useSheetPicker();
+  const targetPicker = useSheetPicker();
 
   const {
     sourceData,
@@ -59,7 +64,10 @@ export function SourceTargetMappingPage() {
   const { apiTested } = useApiKeyStore();
 
   const hasMappings = mappings.length > 0;
-  const canRun = !!sourceData && !!targetData && !loadingSource && !loadingTarget;
+  // "Busy" spans both opening workbooks to list sheets and the sampling read itself.
+  const busySource = loadingSource || sourcePicker.preparing;
+  const busyTarget = loadingTarget || targetPicker.preparing;
+  const canRun = !!sourceData && !!targetData && !busySource && !busyTarget;
   const allOptions = ["IGNORE", ...(targetData?.headers ?? [])];
   // Show which target file a column came from only when there's more than one.
   const multiTarget = targetFileNames.length > 1;
@@ -128,7 +136,7 @@ export function SourceTargetMappingPage() {
           min={100}
           step={1000}
           defaultValue={sampleSize}
-          disabled={loadingSource || loadingTarget}
+          disabled={busySource || busyTarget}
           onBlur={(e) => {
             const v = parseInt(e.target.value, 10);
             if (v && v !== sampleSize) setSampleSize(v);
@@ -150,7 +158,7 @@ export function SourceTargetMappingPage() {
             <DropZone
               loaded={!!sourceData}
               label={
-                loadingSource
+                busySource
                   ? "Reading…"
                   : sourceData
                   ? sourceName
@@ -161,7 +169,7 @@ export function SourceTargetMappingPage() {
                   ? `${sourceData.headers.length} columns · ${sourceData.sampleRows.length.toLocaleString()} sampled rows`
                   : undefined
               }
-              icon={loadingSource ? "⏳" : "📥"}
+              icon={busySource ? "⏳" : "📥"}
               onClick={() => sourceInputRef.current?.click()}
             />
             {sourceFileNames.length > 1 && (
@@ -178,10 +186,12 @@ export function SourceTargetMappingPage() {
               accept={ACCEPT}
               multiple
               className="hidden"
-              onChange={(e) => {
+              onChange={async (e) => {
                 const files = e.target.files ? Array.from(e.target.files) : [];
-                if (files.length) loadSourceFiles(files);
                 e.target.value = "";
+                if (!files.length) return;
+                const sheets = await sourcePicker.chooseSheets(files);
+                if (sheets) loadSourceFiles(files, sheets);
               }}
             />
           </CardContent>
@@ -197,7 +207,7 @@ export function SourceTargetMappingPage() {
             <DropZone
               loaded={!!targetData}
               label={
-                loadingTarget
+                busyTarget
                   ? "Reading…"
                   : targetData
                   ? targetName
@@ -208,7 +218,7 @@ export function SourceTargetMappingPage() {
                   ? `${targetData.headers.length} columns (union) · ${targetData.sampleRows.length.toLocaleString()} sampled rows`
                   : undefined
               }
-              icon={loadingTarget ? "⏳" : "🎯"}
+              icon={busyTarget ? "⏳" : "🎯"}
               onClick={() => targetInputRef.current?.click()}
             />
             {targetFileNames.length > 1 && (
@@ -222,10 +232,12 @@ export function SourceTargetMappingPage() {
               accept={ACCEPT}
               multiple
               className="hidden"
-              onChange={(e) => {
+              onChange={async (e) => {
                 const files = e.target.files ? Array.from(e.target.files) : [];
-                if (files.length) loadTargetFiles(files);
                 e.target.value = "";
+                if (!files.length) return;
+                const sheets = await targetPicker.chooseSheets(files);
+                if (sheets) loadTargetFiles(files, sheets);
               }}
             />
           </CardContent>
@@ -300,6 +312,10 @@ export function SourceTargetMappingPage() {
           </div>
         </>
       )}
+
+      {/* Sheet pickers (multi-sheet workbooks) */}
+      {sourcePicker.sheetPicker}
+      {targetPicker.sheetPicker}
 
       {pendingConflict && (
         <ConflictModal

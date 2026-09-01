@@ -19,7 +19,7 @@ import { MappingTable } from "../components/MappingTable";
 import { PreviewTable } from "../components/PreviewTable";
 import { ConflictModal } from "../components/ConflictModal";
 import { ApiKeyPanel } from "../components/ApiKeyPanel";
-import { useMappingStore, joinKeyCandidates } from "../store/useMappingStore";
+import { useMappingStore, joinKeyCandidates, fileLabel } from "../store/useMappingStore";
 import { buildJoinedPreview } from "../lib/mapping";
 import { useApiKeyStore } from "../store/useApiKeyStore";
 import { useExcelFile } from "../hooks/useExcelFile";
@@ -153,18 +153,20 @@ export function MappingPage() {
             <DropZone
               loaded={files.length > 0}
               label={
-                files.length === 0
+                excel.loading
+                  ? "Reading…"
+                  : files.length === 0
                   ? "Click to upload .xlsx / .xls / .csv "
                   : files.length === 1
-                  ? files[0].fileName
+                  ? fileLabel(files[0])
                   : `${files.length} files`
               }
               sublabel={
                 files.length > 0
-                  ? files.map((f) => f.fileName).join(", ")
+                  ? files.map(fileLabel).join(", ")
                   : "You can select multiple files"
               }
-              icon="📊"
+              icon={excel.loading ? "⏳" : "📊"}
               onClick={excel.openPicker}
             />
             <input
@@ -234,7 +236,7 @@ export function MappingPage() {
                   : "border-transparent text-muted-foreground hover:text-foreground")
               }
             >
-              <span className="truncate max-w-[200px]">{f.fileName}</span>
+              <span className="truncate max-w-[200px]">{fileLabel(f)}</span>
               {files.length > 1 && (
                 <span
                   role="button"
@@ -261,7 +263,7 @@ export function MappingPage() {
             <Card>
               <CardContent className="p-4 space-y-2">
                 <Label htmlFor="kw" className="text-xs uppercase tracking-widest text-muted-foreground">
-                  Runtime filename keyword for “{activeFile.fileName}”
+                  Runtime filename keyword for “{fileLabel(activeFile)}”
                 </Label>
                 <Input
                   id="kw"
@@ -387,6 +389,9 @@ export function MappingPage() {
           </div>
         </>
       )}
+
+      {/* Sheet picker (multi-sheet workbooks) */}
+      {excel.sheetPicker}
 
       {/* Conflict modal */}
       {pendingConflict && activeFile && (

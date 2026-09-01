@@ -1,5 +1,6 @@
 import type { ExcelData } from "./mapping.ts";
 import { parseFile } from "./fileParse.ts";
+import type { SheetSelection } from "./fileParse.ts";
 
 // ── Browser streaming sampler ────────────────────────────────────────────────
 // Reads only the header + the first `maxRows` data rows from each file using a
@@ -33,13 +34,21 @@ interface FileSample {
   rows: string[][];
 }
 
-async function streamSampleFile(file: File, maxRows: number, delimiter = ","): Promise<FileSample> {
-  const fileName = file.name.replace(/\.[^.]+$/, "");
+async function streamSampleFile(
+  file: File,
+  maxRows: number,
+  delimiter = ",",
+  sheetName?: string
+): Promise<FileSample> {
+  const base = file.name.replace(/\.[^.]+$/, "");
+  // Name the dataset after the sheet too, so mapping/export labels stay unambiguous
+  // when several sheets of one workbook are in play.
+  const fileName = sheetName ? `${base} · ${sheetName}` : base;
   const isText = /\.(csv|txt|tsv)$/i.test(file.name);
 
   // Non-text (xlsx/xls): use the whole-file parser, then take a sample.
   if (!isText) {
-    const parsed = await parseFile(file);
+    const parsed = await parseFile(file, sheetName);
     if (!parsed) return { fileName, headers: [], rows: [] };
     return {
       fileName,
@@ -100,11 +109,12 @@ export interface TargetSampleResult {
 // SOURCE files share one schema (row-split) → merge into one dataset.
 export async function sampleSourceFiles(
   files: File[],
-  total = DEFAULT_SAMPLE_PER_SIDE
+  total = DEFAULT_SAMPLE_PER_SIDE,
+  sheets?: SheetSelection
 ): Promise<SourceSampleResult> {
   const per = Math.ceil(total / Math.max(1, files.length));
   const samples: FileSample[] = [];
-  for (const f of files) samples.push(await streamSampleFile(f, per));
+  for (const f of files) samples.push(await streamSampleFile(f, per, ",", sheets?.get(f)));
 
   const warnings: string[] = [];
   let headers: string[] = [];
@@ -126,11 +136,12 @@ export async function sampleSourceFiles(
 // TARGET files may have different schemas → combine into one UNION schema.
 export async function sampleTargetFiles(
   files: File[],
-  total = DEFAULT_SAMPLE_PER_SIDE
+  total = DEFAULT_SAMPLE_PER_SIDE,
+  sheets?: SheetSelection
 ): Promise<TargetSampleResult> {
   const per = Math.ceil(total / Math.max(1, files.length));
   const samples: FileSample[] = [];
-  for (const f of files) samples.push(await streamSampleFile(f, per));
+  for (const f of files) samples.push(await streamSampleFile(f, per, ",", sheets?.get(f)));
 
   const unionHeaders: string[] = [];
   const idx = new Map<string, number>();

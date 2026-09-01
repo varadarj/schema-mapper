@@ -25,10 +25,16 @@ export interface PendingConflict {
 export interface MappingFile {
   id: string;
   fileName: string;
+  sheetName?: string; // chosen sheet, when the upload was a multi-sheet workbook
   keyword: string; // runtime filename token used for Contains() matching
   excelData: ExcelData;
   mappings: ColumnMapping[];
   allRows: string[][]; // full header + data rows (header at index 0), for the joined preview
+}
+
+// Display label — the sheet only matters to the user when they had to choose it.
+export function fileLabel(f: MappingFile): string {
+  return f.sheetName ? `${f.fileName} · ${f.sheetName}` : f.fileName;
 }
 
 // ── Join-key helpers ──────────────────────────────────────────────────────────
@@ -162,6 +168,7 @@ export const useMappingStore = create<MappingStore>((set, get) => ({
     const added: MappingFile[] = parsed.map((p, i) => ({
       id: `${p.fileName}-${offset + i}-${p.data.headers.length}`,
       fileName: p.fileName,
+      sheetName: p.sheetName,
       keyword: p.fileName.toUpperCase(),
       excelData: p.data,
       mappings: [],
