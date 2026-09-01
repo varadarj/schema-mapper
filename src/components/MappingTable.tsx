@@ -13,6 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { X } from "lucide-react";
 import { ConfidenceBadge } from "./ConfidenceBadge";
 import type { ColumnMapping } from "../lib/mapping";
 import { cn } from "@/lib/utils";
@@ -100,21 +101,44 @@ export function MappingTable({
                   <ConfidenceBadge confidence={m.confidence} />
                 </TableCell>
                 <TableCell>
-                  <Select
-                    value={m.mappedTo}
-                    onValueChange={(val) => onMappingChange(i, val)}
-                  >
-                    <SelectTrigger className="h-8 text-xs bg-white">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="bg-white">
-                      {allOptions.map((o) => (
-                        <SelectItem key={o} value={o} className="text-xs">
-                          {o}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <div className="flex items-center gap-1.5">
+                    <Select
+                      value={m.mappedTo}
+                      onValueChange={(val) => onMappingChange(i, val)}
+                    >
+                      <SelectTrigger className="h-8 text-xs bg-white">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="bg-white">
+                        {(allOptions.includes(m.mappedTo)
+                          ? allOptions
+                          : [m.mappedTo, ...allOptions]
+                        ).map((o) => (
+                          <SelectItem key={o} value={o} className="text-xs">
+                            {o}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+
+                    {/* Quick "mark as IGNORE" — red circle that expands to a label */}
+                    {m.mappedTo !== "IGNORE" && (
+                      <button
+                        type="button"
+                        aria-label="Mark as IGNORE"
+                        title="Mark as IGNORE"
+                        onClick={() => onMappingChange(i, "IGNORE")}
+                        className="group/ig flex h-5 shrink-0 items-center rounded-full bg-red-500 text-white transition-all duration-150 hover:bg-red-600"
+                      >
+                        <span className="flex h-5 w-5 items-center justify-center">
+                          <X className="h-3 w-3" strokeWidth={3} />
+                        </span>
+                        <span className="max-w-0 overflow-hidden whitespace-nowrap text-[10px] font-bold uppercase tracking-wide transition-all duration-150 group-hover/ig:mr-2 group-hover/ig:max-w-[64px]">
+                          Ignore
+                        </span>
+                      </button>
+                    )}
+                  </div>
                   {m.mappedTo !== "IGNORE" && targetFileOf?.(m.mappedTo) && (
                     <div className="text-[10px] text-muted-foreground mt-0.5">
                       in {targetFileOf(m.mappedTo)}
