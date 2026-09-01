@@ -25,6 +25,42 @@ export const AR_UNIQUE = new Set<string>([
   "DEBT90DAY",
 ]);
 
+// ── DA field-name aliases ─────────────────────────────────────────────────────
+// Data analysts sometimes label the expected DSP field with a non-canonical
+// name (e.g. "CUSTOMERNUMBER" for ACCOUNTNUMBER). Keys are normalized (uppercase,
+// alphanumerics only); values are the canonical DSP field. Only used to resolve
+// a pasted mapping onto an allowed config field — never to invent new fields.
+export const FIELD_ALIASES: Record<string, string> = {
+  // ACCOUNTNUMBER
+  CUSTOMERNUMBER: "ACCOUNTNUMBER", CUSTOMERNO: "ACCOUNTNUMBER", CUSTNUMBER: "ACCOUNTNUMBER",
+  CUSTNO: "ACCOUNTNUMBER", CUSTOMERID: "ACCOUNTNUMBER", CUSTID: "ACCOUNTNUMBER",
+  ACCOUNTNO: "ACCOUNTNUMBER", ACCTNO: "ACCOUNTNUMBER", ACCTNUMBER: "ACCOUNTNUMBER",
+  ACCOUNTID: "ACCOUNTNUMBER", CHILDNUMBER: "ACCOUNTNUMBER", CHILDNO: "ACCOUNTNUMBER",
+  // NAME
+  CUSTOMERNAME: "NAME", CUSTNAME: "NAME", COMPANYNAME: "NAME", CLIENTNAME: "NAME",
+  CHILDNAME: "NAME", ACCOUNTNAME: "NAME",
+  // ADDRESS
+  ADDRESSLINE1: "ADDRESS1", ADDR1: "ADDRESS1", STREET: "ADDRESS1", STREET1: "ADDRESS1",
+  ADDRESSLINE2: "ADDRESS2", ADDR2: "ADDRESS2", STREET2: "ADDRESS2", SUITE: "ADDRESS2",
+  // CITY / REGION / POSTAL / COUNTRY
+  TOWN: "CITY",
+  STATE: "REGION", PROVINCE: "REGION", STATEPROVINCE: "REGION",
+  ZIP: "POSTALCODE", ZIPCODE: "POSTALCODE", POSTCODE: "POSTALCODE", POSTAL: "POSTALCODE",
+  NATION: "COUNTRY", COUNTRYCODE: "COUNTRY", CYCD: "COUNTRY",
+  // PHONE
+  PHONE: "PHONENO", TELEPHONE: "PHONENO", PHONENUMBER: "PHONENO", TEL: "PHONENO",
+  // VAT / TERMS / CURRENCY
+  TAXNUMBER: "VAT", TAXID: "VAT", TAXNO: "VAT", VATNUMBER: "VAT", VATNO: "VAT",
+  TERM: "TERMS", PAYMENTTERMS: "TERMS",
+  CCY: "CURRENCY", CURR: "CURRENCY",
+  // Invoice
+  INVOICEAMOUNT: "INVAMT", OPENAMOUNT: "INVAMT", OPENBALANCE: "INVAMT", INVAMOUNT: "INVAMT", AMOUNT: "INVAMT",
+  INVOICEDATE: "INVDATE", TRANSDATE: "INVDATE", TRANSACTIONDATE: "INVDATE",
+  DUE: "DUEDATE",
+  // aging
+  CURRENT: "DEBTCURRENT",
+};
+
 // ── Invoice providers ─────────────────────────────────────────────────────────
 // Invoice (vs aging) providers carry raw invoice rows. These raw columns get a
 // "C" suffix in the ODBC schema and are converted in ProviderScrub

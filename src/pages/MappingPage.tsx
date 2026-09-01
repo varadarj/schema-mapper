@@ -42,6 +42,7 @@ export function MappingPage() {
     runFuzzyMapping,
     runAiMapping,
     handleMappingChange,
+    applyMappingText,
     confirmConflict,
     cancelConflict,
     setActiveFile,
@@ -51,6 +52,7 @@ export function MappingPage() {
     removeFile,
     reset,
   } = useMappingStore();
+  const [mapText, setMapText] = useState<Record<string, string>>({});
   const { apiTested } = useApiKeyStore();
 
   const excel = useExcelFile();
@@ -279,6 +281,40 @@ export function MappingPage() {
               </CardContent>
             </Card>
           )}
+
+          {/* Paste expected mapping — bulk apply "Header = FIELD" lines */}
+          <Card>
+            <CardContent className="p-4 space-y-2">
+              <Label htmlFor="map-text" className="text-xs uppercase tracking-widest text-muted-foreground">
+                Expected mapping for “{fileLabel(activeFile)}” (optional)
+              </Label>
+              <textarea
+                id="map-text"
+                value={mapText[activeFile.id] ?? ""}
+                onChange={(e) =>
+                  setMapText((s) => ({ ...s, [activeFile.id]: e.target.value }))
+                }
+                placeholder={"Cust.number = ACCOUNTNUMBER\nCustomer Name = NAME\nAddress = IGNORE\n    = CITY"}
+                rows={4}
+                className="w-full rounded-md border border-input bg-white px-3 py-2 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-ring"
+              />
+              <div className="flex items-center gap-3">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={!(mapText[activeFile.id] ?? "").trim()}
+                  onClick={() => applyMappingText(mapText[activeFile.id] ?? "")}
+                >
+                  Apply mapping
+                </Button>
+                <p className="text-xs text-muted-foreground">
+                  One <code>Header = FIELD</code> per line. Columns are matched by header
+                  (in order, so repeats map to successive columns); use <code>IGNORE</code>{" "}
+                  to skip. Unlisted columns keep their current mapping.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
 
           {/* Stats */}
           <div className="grid grid-cols-4 gap-3">

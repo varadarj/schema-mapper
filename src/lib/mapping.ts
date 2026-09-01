@@ -1,4 +1,4 @@
-import { bestMatch, AGING_FIELDS, AR_UNIQUE } from "./matchers.ts";
+import { bestMatch, AGING_FIELDS, AR_UNIQUE, FIELD_ALIASES } from "./matchers.ts";
 
 export type Confidence = "HIGH" | "MEDIUM" | "LOW" | "NONE";
 export type MatchMethod = "pattern" | "address" | "heuristic" | "fuzzy" | "ai" | "data";
@@ -122,6 +122,69 @@ export function ensureInvoiceAmount(mappings: ColumnMapping[]): ColumnMapping[] 
     required: false,
   };
   return result;
+}
+
+// ── Bulk apply a pasted "Header = FIELD" mapping ─────────────────────────────
+// Each non-blank line is "<excel header> = <DSP field>". Lines match columns by
+// header text (trimmed, case-insensitive), consuming columns in order so a
+// header that repeats maps to successive columns. Blank-header lines (e.g.
+// "    = CITY") match a blank-header column. Unmatched lines are skipped;
+// columns not named in the text keep their current mapping. A target that isn't
+// a known standardized column is applied verbatim (uppercased). The result is
+// run through one-to-one enforcement.
+// Resolve a pasted target onto an ALLOWED config field (or IGNORE). The DA's
+// label may be a non-canonical alias (e.g. CUSTOMERNUMBER → ACCOUNTNUMBER); the
+// paste can never introduce a field that isn't in config — anything that can't
+// be resolved to a candidate becomes IGNORE.
+const normField = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]/g, "");
+
+export function resolveDspField(target: string, candidates: string[]): string {
+  const n = normField(target);
+  if (!n || n === "IGNORE") return "IGNORE";
+  const direct = candidates.find((c) => normField(c) === n);
+  if (direct) return direct;
+  const alias = FIELD_ALIASES[n];
+  if (alias) {
+    const canonical = candidates.find((c) => normField(c) === normField(alias));
+    if (canonical) return canonical;
+  }
+  return "IGNORE";
+}
+
+export function applyMappingText(
+  mappings: ColumnMapping[],
+  text: string,
+  candidates: string[]
+): ColumnMapping[] {
+  const result = mappings.map((m) => ({ ...m }));
+  const used = new Set<number>();
+  const norm = (s: string) => s.trim().toLowerCase();
+
+  for (const raw of text.split(/\r?\n/)) {
+    const eq = raw.indexOf("=");
+    if (eq < 0) continue;
+    const header = raw.slice(0, eq).trim();
+    const target = raw.slice(eq + 1).trim();
+    if (!target) continue;
+
+    const idx = result.findIndex(
+      (m, i) => !used.has(i) && norm(m.excelHeader) === norm(header)
+    );
+    if (idx < 0) continue;
+    used.add(idx);
+
+    const field = resolveDspField(target, candidates);
+
+    result[idx] = {
+      ...result[idx],
+      mappedTo: field,
+      confidence: field === "IGNORE" ? "NONE" : "HIGH",
+      score: field === "IGNORE" ? 0 : 1,
+      required: (REQUIRED_FIELDS as readonly string[]).includes(field),
+    };
+  }
+
+  return enforceUniqueMapping(result);
 }
 
 // ── Fix address ordering — lower-numbered address field must come first ───────

@@ -3,6 +3,7 @@ import type { ColumnMapping, ExcelData, PreviewData } from "../lib/mapping";
 import {
   buildMappings,
   applyMappingChange,
+  applyMappingText as applyMappingTextLib,
   enforceUniqueMapping,
   fixAddressOrder,
   buildPreviewRows,
@@ -112,6 +113,7 @@ interface MappingStore {
   // actions — mapping
   runFuzzyMapping: () => void;
   handleMappingChange: (rowIdx: number, newField: string) => void;
+  applyMappingText: (text: string) => void;
   confirmConflict: () => void;
   cancelConflict: () => void;
   refreshPreview: () => void;
@@ -246,6 +248,40 @@ export const useMappingStore = create<MappingStore>((set, get) => ({
       files: next,
       joinKey: recomputeJoinKey(next, joinKey, joinKeyAuto),
       preview: buildPreviewRows(active.excelData, active.mappings),
+      codeOutput: null,
+    });
+  },
+
+  applyMappingText: (text) => {
+    const { standardizedColumns, joinKey, joinKeyAuto } = get();
+    const active = get().activeFile();
+    if (!active) return;
+
+    // Start from current mappings, or a skeleton (all IGNORE) if not predicted yet.
+    const base: ColumnMapping[] = active.mappings.length
+      ? active.mappings
+      : active.excelData.headers.map((h, i) => ({
+          excelIndex: i,
+          excelHeader: h,
+          sampleVals: active.excelData.sampleRows
+            .slice(0, 5)
+            .map((r) => String(r[i] ?? ""))
+            .filter((v) => v !== ""),
+          mappedTo: "IGNORE",
+          score: 0,
+          confidence: "NONE" as const,
+          method: "fuzzy" as const,
+          required: false,
+        }));
+
+    const updated = applyMappingTextLib(base, text, standardizedColumns);
+    const next = get().files.map((f) =>
+      f.id === active.id ? { ...f, mappings: updated } : f
+    );
+    set({
+      files: next,
+      joinKey: recomputeJoinKey(next, joinKey, joinKeyAuto),
+      preview: buildPreviewRows(active.excelData, updated),
       codeOutput: null,
     });
   },
